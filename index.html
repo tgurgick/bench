@@ -1,0 +1,575 @@
+<!doctype html>
+<!-- tl bench — the notebook UI. One file, no build step, no dependencies.
+     Served by bench/server.js; everything here renders JSON from /api and
+     posts small actions back. All dynamic content passes through esc(). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tl bench</title>
+<style>
+  :root {
+    --paper: #f7f4ee; --card: #fffdf8; --ink: #2b2925; --muted: #8a857c;
+    --line: #e6e0d4; --accent: #4a6f5d; --accent-soft: #e4ece7;
+    --amber: #b07d2e; --amber-soft: #f5ead4; --red: #a2452f; --red-soft: #f3e0da;
+    --blue: #3d5a80; --blue-soft: #e1e8f0; --win: #4a6f5d;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
+  a { color: var(--accent); }
+
+  header {
+    position: sticky; top: 0; z-index: 20; background: var(--paper);
+    border-bottom: 1px solid var(--line); padding: 10px 20px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  header .word { font-weight: 700; letter-spacing: .3px; }
+  header .word span { color: var(--accent); }
+  select, input[type=text] {
+    font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 9px;
+  }
+  button {
+    font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--card);
+    color: var(--ink); border-radius: 8px; padding: 5px 12px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.quiet { border: none; background: none; color: var(--muted); padding: 3px 6px; }
+  button.quiet:hover { color: var(--ink); }
+  button:disabled { opacity: .5; cursor: default; }
+  .providers { margin-left: auto; display: flex; gap: 10px; font-size: 12.5px; color: var(--muted); }
+  .providers .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+  .dot.ok { background: var(--accent); } .dot.no { background: var(--line); }
+
+  main { max-width: 900px; margin: 0 auto; padding: 18px 20px 120px; }
+
+  /* the graph strip — the n8n nod: the notebook's shape at a glance */
+  .graph { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 10px 2px 16px; }
+  .graph .gcell {
+    font-size: 12px; font-family: var(--mono); padding: 2px 9px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--line); cursor: pointer; white-space: nowrap;
+  }
+  .graph .gcell.stale { border-color: var(--amber); background: var(--amber-soft); }
+  .graph .gcell.err { border-color: var(--red); background: var(--red-soft); }
+  .graph .arrow { color: var(--muted); font-size: 11px; }
+
+  .cell {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    margin: 0 0 14px; overflow: hidden;
+  }
+  .cell.note { background: none; border: none; border-radius: 0; }
+  .cell-head {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--line); background: rgba(0,0,0,.012);
+  }
+  .chip {
+    font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+  }
+  .chip.data { background: var(--blue-soft); color: var(--blue); }
+  .chip.agent { background: #efe4f0; color: #7a4a80; }
+  .chip.metric, .chip.judge { background: var(--amber-soft); color: var(--amber); }
+  .chip.eval { background: #e8e2f5; color: #5b4a9e; }
+  .chip.annotate { background: #f0e4de; color: #9c5c34; }
+  .chip.golden { background: #f5efd4; color: #8b7a1e; }
+  .cid { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+  .status-dot.stale { background: var(--amber); }
+  .status-dot.never { background: var(--line); }
+  .status-dot.err { background: var(--red); }
+  .cell-head .when { color: var(--muted); font-size: 12px; }
+  .cell-head .spacer { flex: 1; }
+
+  .editor { display: none; border-bottom: 1px solid var(--line); }
+  .cell.editing .editor { display: block; }
+  textarea {
+    display: block; width: 100%; border: none; background: #faf7f0; color: var(--ink);
+    font: 13px/1.5 var(--mono); padding: 12px 14px; min-height: 60px; resize: vertical; outline: none;
+  }
+  .editor .bar { display: flex; gap: 8px; padding: 6px 12px; background: #faf7f0; border-top: 1px dashed var(--line); }
+
+  .out { padding: 12px 14px; }
+  .out .err { color: var(--red); font-family: var(--mono); font-size: 13px; white-space: pre-wrap; }
+  .out .empty { color: var(--muted); font-size: 13.5px; }
+  .kv { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  .kv b { color: var(--ink); font-weight: 600; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; }
+  td.num, th.num { text-align: right; font-family: var(--mono); }
+  .scroll { overflow-x: auto; }
+  .winner { color: var(--win); font-weight: 700; }
+  .verdict { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
+  .verdict.pass { background: var(--accent-soft); color: var(--accent); }
+  .verdict.fail { background: var(--red-soft); color: var(--red); }
+
+  pre.block {
+    background: #f2eee4; border-radius: 8px; padding: 10px 12px; overflow-x: auto;
+    font: 12.5px/1.5 var(--mono); white-space: pre-wrap; margin: 8px 0;
+  }
+  .trace { margin-top: 8px; border-left: 2px solid var(--line); padding-left: 12px; }
+  .trace .t { font: 12.5px/1.6 var(--mono); margin: 2px 0; }
+  .trace .t .tag { color: var(--muted); }
+  .trace .t.tool .tag { color: var(--blue); }
+
+  .note-body { padding: 4px 2px; }
+  .note-body h1 { font-size: 22px; margin: 18px 0 6px; }
+  .note-body h2 { font-size: 18px; margin: 16px 0 6px; }
+  .note-body p { margin: 8px 0; color: #4c4841; }
+  .note-body code { background: #efe9db; border-radius: 4px; padding: 0 5px; font: 12.5px var(--mono); }
+  .note-edit { color: var(--muted); float: right; opacity: 0; }
+  .cell.note:hover .note-edit { opacity: 1; }
+
+  /* annotation panel — the HITL surface */
+  .anno-progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 8px 0; }
+  .anno-progress i { display: block; height: 100%; background: var(--accent); }
+  .anno-item { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 10px; background: #fbf9f3; }
+  .anno-item .q { color: var(--muted); font-size: 12.5px; margin-bottom: 4px; }
+  .anno-buttons { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+  .anno-buttons .key { color: var(--muted); font-size: 11px; margin-left: 4px; }
+  .tally { display: flex; gap: 12px; font-size: 12.5px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+
+  .addbar { display: flex; gap: 6px; align-items: center; justify-content: center; padding: 4px 0 24px; flex-wrap: wrap; }
+  .addbar span { color: var(--muted); font-size: 12.5px; }
+
+  .toast {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--paper); border-radius: 10px; padding: 8px 16px;
+    font-size: 13.5px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 50;
+  }
+  .toast.show { opacity: .95; }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .home { color: var(--muted); text-align: center; padding: 60px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="word">tl <span>bench</span></div>
+  <select id="ws"></select>
+  <select id="nb"></select>
+  <button id="new-nb" class="quiet" title="new notebook">+ notebook</button>
+  <button id="demo-nb" class="quiet" title="scaffold the demo notebook">demo</button>
+  <button id="run-all" class="primary">▶ run all</button>
+  <div class="providers" id="providers"></div>
+</header>
+
+<main id="main"><div class="home">loading…</div></main>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+// ---------------------------------------------------------------------------
+// state + plumbing
+// ---------------------------------------------------------------------------
+const S = { ws: null, nb: null, boot: null, notebook: null, running: new Set(), editing: new Set(), annoPos: {} };
+
+const $ = s => document.querySelector(s);
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200);
+}
+async function api(path) {
+  const r = await fetch(path);
+  const d = await r.json();
+  if (d && d.error) throw new Error(d.error);
+  return d;
+}
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const d = await r.json();
+  if (d && d.error) throw new Error(d.error);
+  return d;
+}
+const ago = ts => {
+  if (!ts) return 'never ran';
+  const s = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return new Date(ts).toISOString().slice(0, 10);
+};
+
+// ---------------------------------------------------------------------------
+// boot + navigation
+// ---------------------------------------------------------------------------
+async function boot() {
+  S.boot = await api('/api/state');
+  $('#providers').innerHTML = S.boot.providers.map(p =>
+    `<span title="${esc(p.reason)}"><span class="dot ${p.ok ? 'ok' : 'no'}"></span>${esc(p.name)}</span>`).join('');
+  const wsSel = $('#ws');
+  wsSel.innerHTML = S.boot.workspaces.map(w => `<option>${esc(w.name)}</option>`).join('');
+  S.ws = localStorage.getItem('bench.ws');
+  if (!S.boot.workspaces.some(w => w.name === S.ws)) S.ws = (S.boot.workspaces[0] || {}).name || null;
+  if (S.ws) wsSel.value = S.ws;
+  await loadNotebooks();
+}
+
+async function loadNotebooks() {
+  if (!S.ws) { $('#main').innerHTML = '<div class="home">No workspaces under projects/ — create one with /tl:new, then come back.</div>'; return; }
+  const d = await api('/api/notebooks?ws=' + encodeURIComponent(S.ws));
+  const sel = $('#nb');
+  sel.innerHTML = d.notebooks.map(n => `<option value="${esc(n.name)}">${esc(n.title)}</option>`).join('');
+  const remembered = localStorage.getItem('bench.nb.' + S.ws);
+  S.nb = d.notebooks.some(n => n.name === remembered) ? remembered : (d.notebooks[0] || {}).name || null;
+  if (S.nb) { sel.value = S.nb; await loadNotebook(); }
+  else {
+    $('#main').innerHTML = '<div class="home">No notebooks in this workspace yet.<br><br>' +
+      '<button class="primary" onclick="makeDemo()">scaffold the demo notebook</button></div>';
+  }
+}
+
+async function loadNotebook() {
+  S.notebook = await api('/api/notebook?ws=' + encodeURIComponent(S.ws) + '&nb=' + encodeURIComponent(S.nb));
+  render();
+}
+
+$('#ws').onchange = e => { S.ws = e.target.value; localStorage.setItem('bench.ws', S.ws); loadNotebooks(); };
+$('#nb').onchange = e => { S.nb = e.target.value; localStorage.setItem('bench.nb.' + S.ws, S.nb); loadNotebook(); };
+$('#run-all').onclick = () => runCell(null);
+$('#demo-nb').onclick = () => makeDemo();
+$('#new-nb').onclick = async () => {
+  const name = prompt('notebook name (lowercase slug):');
+  if (!name) return;
+  try {
+    const r = await post('/api/notebook-create', { ws: S.ws, name });
+    localStorage.setItem('bench.nb.' + S.ws, r.name);
+    await loadNotebooks(); toast('notebook created');
+  } catch (e) { toast(String(e.message || e)); }
+};
+async function makeDemo() {
+  try {
+    const r = await post('/api/notebook-create', { ws: S.ws, demo: true });
+    localStorage.setItem('bench.nb.' + S.ws, r.name);
+    await loadNotebooks(); toast('demo notebook created — hit ▶ run all');
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+// ---------------------------------------------------------------------------
+// actions
+// ---------------------------------------------------------------------------
+async function runCell(id) {
+  const key = id || '__all__';
+  if (S.running.has(key)) return;
+  S.running.add(key); render();
+  try {
+    const r = await post('/api/run', { ws: S.ws, nb: S.nb, cell: id || undefined, force: Boolean(id) });
+    S.notebook = r.notebook;
+    toast(r.ran.length ? 'ran: ' + r.ran.join(', ') : 'nothing stale');
+  } catch (e) { toast(String(e.message || e)); }
+  S.running.delete(key); render();
+}
+
+async function saveCell(id) {
+  const cell = S.notebook.cells.find(c => c.id === id);
+  const ta = document.getElementById('ed-' + id);
+  if (!cell || !ta) return;
+  try {
+    const body = cell.type === 'note'
+      ? { ws: S.ws, nb: S.nb, id, text: ta.value }
+      : { ws: S.ws, nb: S.nb, id, raw: ta.value };
+    const r = await post('/api/cell-save', body);
+    S.editing.delete(id);
+    S.notebook = r.notebook;
+    render(); toast('saved');
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+async function deleteCell(id) {
+  if (!confirm('delete cell "' + id + '"?')) return;
+  try {
+    const r = await post('/api/cell-delete', { ws: S.ws, nb: S.nb, id });
+    S.notebook = r.notebook; render(); toast('deleted');
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+async function addCell(type, after) {
+  try {
+    const r = await post('/api/cell-add', { ws: S.ws, nb: S.nb, type, after });
+    S.notebook = r.notebook;
+    const added = r.notebook.cells.map(c => c.id).find(cid => !document.getElementById('cell-' + CSS.escape(cid)));
+    if (added) S.editing.add(added);
+    render(); toast('added ' + type + ' cell');
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+function toggleEdit(id) {
+  if (S.editing.has(id)) S.editing.delete(id); else S.editing.add(id);
+  render();
+}
+
+async function annotateItem(cellId, itemId, label) {
+  try {
+    await post('/api/annotate', { ws: S.ws, nb: S.nb, cell: cellId, item_id: itemId, label });
+    S.annoPos[cellId] = (S.annoPos[cellId] || 0); // stays; queue advances because item is now labeled
+    const r = await post('/api/run', { ws: S.ws, nb: S.nb, cell: cellId, force: true });
+    S.notebook = r.notebook; render();
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+async function decideGoldenItem(cellId, set, itemId, status) {
+  try {
+    await post('/api/golden-decide', { ws: S.ws, set, decisions: [{ id: itemId, status }] });
+    const r = await post('/api/run', { ws: S.ws, nb: S.nb, cell: cellId, force: true });
+    S.notebook = r.notebook; render();
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+// ---------------------------------------------------------------------------
+// render
+// ---------------------------------------------------------------------------
+function render() {
+  const nb = S.notebook;
+  if (!nb) return;
+  const typed = nb.cells.filter(c => c.type !== 'note');
+  const runAllBtn = $('#run-all');
+  runAllBtn.innerHTML = S.running.has('__all__') ? '<span class="spin">◌</span> running' : '▶ run all';
+
+  let html = '';
+  // graph strip: topo order with stale/error state — the notebook's shape
+  if (typed.length) {
+    html += '<div class="graph">' + nb.graph.order
+      .filter(id => typed.some(c => c.id === id))
+      .map((id, i) => {
+        const st = nb.state[id] || {};
+        const cls = st.error ? 'err' : st.stale ? 'stale' : '';
+        return (i ? '<span class="arrow">→</span>' : '') +
+          `<span class="gcell ${cls}" onclick="document.getElementById('cell-${esc(id)}').scrollIntoView({behavior:'smooth',block:'center'})">${esc(id)}</span>`;
+      }).join('') + '</div>';
+    if (nb.graph.cycle.length) html += `<div class="out"><span class="err">dependency cycle: ${esc(nb.graph.cycle.join(', '))}</span></div>`;
+  }
+
+  for (const cell of nb.cells) html += renderCell(cell);
+
+  html += `<div class="addbar"><span>add cell:</span>` +
+    S.boot.cell_types.map(t => `<button class="quiet" onclick="addCell('${t}')">+ ${t}</button>`).join('') + '</div>';
+
+  $('#main').innerHTML = html;
+
+  // wire keyboard shortcuts for the first visible annotation panel
+  document.onkeydown = e => {
+    if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    const btn = document.querySelector('.anno-buttons button[data-key="' + e.key + '"]');
+    if (btn) { btn.click(); e.preventDefault(); }
+  };
+}
+
+function renderCell(cell) {
+  if (cell.type === 'note') {
+    const editing = S.editing.has(cell.id);
+    return `<div class="cell note" id="cell-${esc(cell.id)}">
+      <div class="note-body">
+        <button class="quiet note-edit" onclick="toggleEdit('${esc(cell.id)}')">✎</button>
+        ${editing
+          ? `<textarea id="ed-${esc(cell.id)}" rows="${Math.min(14, (cell.text || '').split('\n').length + 2)}">${esc(cell.text)}</textarea>
+             <div class="editor bar" style="display:flex"><button class="primary" onclick="saveCell('${esc(cell.id)}')">save</button>
+             <button onclick="toggleEdit('${esc(cell.id)}')">cancel</button></div>`
+          : mdLite(cell.text)}
+      </div></div>`;
+  }
+
+  const st = (S.notebook.state || {})[cell.id] || {};
+  const running = S.running.has(cell.id) || S.running.has('__all__');
+  const editing = S.editing.has(cell.id) || cell.error;
+  const dot = st.error ? 'err' : !st.ran_at ? 'never' : st.stale ? 'stale' : '';
+  const dotTitle = st.error ? 'last run errored' : !st.ran_at ? 'never ran' : st.stale ? 'stale — config or upstream changed' : 'fresh';
+
+  return `<div class="cell ${editing ? 'editing' : ''}" id="cell-${esc(cell.id)}">
+    <div class="cell-head">
+      <span class="chip ${esc(cell.type)}">${esc(cell.type)}</span>
+      <span class="cid">${esc(cell.id)}</span>
+      <span class="status-dot ${dot}" title="${dotTitle}"></span>
+      <span class="when">${st.ran_at ? ago(st.ran_at) : ''}</span>
+      <span class="spacer"></span>
+      <button class="quiet" onclick="toggleEdit('${esc(cell.id)}')" title="edit config">✎</button>
+      <button class="quiet" onclick="deleteCell('${esc(cell.id)}')" title="delete">×</button>
+      <button onclick="runCell('${esc(cell.id)}')" ${running ? 'disabled' : ''}>${running ? '<span class="spin">◌</span>' : '▶'}</button>
+    </div>
+    <div class="editor">
+      <textarea id="ed-${esc(cell.id)}" rows="${Math.min(18, (cell.raw || '').split('\n').length + 2)}">${esc(cell.raw || '')}</textarea>
+      <div class="bar"><button class="primary" onclick="saveCell('${esc(cell.id)}')">save</button>
+      <button onclick="toggleEdit('${esc(cell.id)}')">cancel</button>
+      ${cell.error ? `<span class="err" style="color:var(--red);font-size:12.5px">${esc(cell.error)}</span>` : ''}</div>
+    </div>
+    <div class="out">${renderOutput(cell, st)}</div>
+  </div>`;
+}
+
+function renderOutput(cell, st) {
+  if (st.error) return `<div class="err">${esc(st.error)}</div>`;
+  if (!st.output) return '<div class="empty">not run yet — hit ▶</div>';
+  const o = st.output;
+  try {
+    switch (cell.type) {
+      case 'data': return outData(o);
+      case 'prompt': return outPrompt(o);
+      case 'agent': return outAgent(o);
+      case 'metric': return `<div class="kv">kind <b>${esc(o.kind)}</b> · dry-run value <b>${esc(o.sample_value)}</b></div>`;
+      case 'judge': return outJudge(o);
+      case 'golden': return outGolden(o);
+      case 'eval': return outEval(o);
+      case 'annotate': return outAnnotate(cell, o);
+      default: return `<pre class="block">${esc(JSON.stringify(o, null, 2)).slice(0, 4000)}</pre>`;
+    }
+  } catch (e) { return `<div class="err">render error: ${esc(e.message)}</div>`; }
+}
+
+function tableOf(rows, columns, cap) {
+  const cols = columns && columns.length ? columns : Object.keys(rows[0] || {});
+  const shown = rows.slice(0, cap || 8);
+  return `<div class="scroll"><table><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr>` +
+    shown.map(r => `<tr>${cols.map(c => `<td>${esc(clip(r[c], 140))}</td>`).join('')}</tr>`).join('') +
+    `</table></div>` +
+    (rows.length > shown.length ? `<div class="kv">showing ${shown.length} of <b>${rows.length}</b></div>` : '');
+}
+const clip = (v, n) => { const s = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+
+function outData(o) {
+  if (!o.count) return `<div class="empty">0 rows (${esc(o.source)}) — for a golden-set source, approve rows in its annotate cell first.</div>`;
+  return tableOf(o.rows, o.columns) + `<div class="kv"><b>${o.count}</b> rows · source <b>${esc(o.source)}</b></div>`;
+}
+
+function outPrompt(o) {
+  return (o.system ? `<div class="kv">system: ${esc(clip(o.system, 200))}</div>` : '') +
+    `<pre class="block">${esc(o.template)}</pre>` +
+    `<div class="kv">vars: ${o.vars.map(v => `<b>{{${esc(v)}}}</b>`).join(' ') || '(none)'}` +
+    (o.preview ? `</div><div class="kv">preview (first row):</div><pre class="block">${esc(clip(o.preview, 600))}</pre>` : '</div>');
+}
+
+function outAgent(o) {
+  return `<div class="kv">smoke test on: <b>${esc(clip(o.sample_row && (o.sample_row.input || JSON.stringify(o.sample_row)), 120))}</b></div>` +
+    `<pre class="block">${esc(clip(o.output, 1200))}</pre>` + trace(o.turns) + usage(o.usage, o.provider, o.model);
+}
+
+function trace(turns) {
+  if (!turns || !turns.length) return '';
+  return `<div class="trace">` + turns.map(t =>
+    t.kind === 'tool'
+      ? `<div class="t tool"><span class="tag">↳ tool ${esc(t.tool)}(${esc(clip(JSON.stringify(t.args), 80))})</span> → ${esc(clip(t.result, 120))}</div>`
+      : `<div class="t"><span class="tag">turn ${t.turn} model</span> ${t.tool_calls && t.tool_calls.length ? '→ calls ' + t.tool_calls.map(c => esc(c.name)).join(', ') : esc(clip(t.text, 150))}</div>`
+  ).join('') + `</div>`;
+}
+function usage(u, provider, model) {
+  if (!u) return '';
+  return `<div class="kv">${provider ? `<b>${esc(provider)}/${esc(model)}</b> · ` : ''}tokens in <b>${u.input_tokens || 0}</b> out <b>${u.output_tokens || 0}</b>${u.cost_usd ? ` · $${u.cost_usd}` : ''}</div>`;
+}
+
+function outJudge(o) {
+  const s = o.sample || {};
+  return `<div class="kv">kind <b>${esc(o.kind)}</b>${o.provider ? ` · <b>${esc(o.provider)}${o.model ? '/' + esc(o.model) : ''}</b>` : ''} · dimensions: <b>${esc((o.dimensions || []).join(', '))}</b></div>` +
+    `<div class="kv">sample judgment: <span class="verdict ${esc(s.verdict)}">${esc(s.verdict || '?')}</span> overall <b>${esc(s.overall)}</b>/${esc(s.scale || 5)}${s.rationale ? ` — ${esc(clip(s.rationale, 160))}` : ''}</div>`;
+}
+
+function outGolden(o) {
+  return `<div class="kv">set <b>${esc(o.set)}</b> · generated <b>${o.generated}</b> new drafts · ` +
+    `now <b>${o.approved}</b> approved / <b>${o.draft}</b> draft / <b>${o.rejected}</b> rejected of ${o.total}</div>` +
+    (o.preview && o.preview.length ? tableOf(o.preview.map(publicish), null, 5) : '') +
+    `<div class="kv">drafts need a human — approve them in an annotate cell with <b>golden: ${esc(o.set)}</b>.</div>`;
+}
+const publicish = r => { const x = {}; for (const k in r) if (!/^_|^(status|origin|created|generator|decided)/.test(k)) x[k] = r[k]; return x; };
+
+function outEval(o) {
+  const s = o.summary || {};
+  const metricNames = o.metrics || [];
+  let html = `<div class="scroll"><table><tr><th>candidate</th><th>provider/model</th><th class="num">n</th>` +
+    metricNames.map(m => `<th class="num">${esc(m)}</th>`).join('') +
+    `<th class="num">judge</th><th class="num">pass</th><th class="num">tokens</th><th class="num">ms</th></tr>`;
+  for (const c of s.candidates || []) {
+    const win = s.winner === c.candidate;
+    html += `<tr>
+      <td class="${win ? 'winner' : ''}">${esc(c.candidate)}${win ? ' ★' : ''}</td>
+      <td>${esc(c.provider || '')}/${esc(c.model || '')}</td>
+      <td class="num">${c.n}${c.errors ? ` <span style="color:var(--red)">(${c.errors} err)</span>` : ''}</td>` +
+      metricNames.map(m => `<td class="num">${c.metrics[m] == null ? '—' : esc(c.metrics[m])}</td>`).join('') +
+      `<td class="num">${c.judge && c.judge.overall_mean != null ? esc(c.judge.overall_mean) : '—'}</td>
+      <td class="num">${c.judge && c.judge.pass_rate != null ? Math.round(c.judge.pass_rate * 100) + '%' : '—'}</td>
+      <td class="num">${(c.tokens.input + c.tokens.output) || 0}</td>
+      <td class="num">${c.latency_ms_mean == null ? '—' : c.latency_ms_mean}</td></tr>`;
+  }
+  html += '</table></div>';
+  html += `<div class="kv">run <b>${esc(o.run_id)}</b> · ${o.rows} rows · results at <b>${esc(o.results_path)}</b></div>`;
+  // per-row detail, collapsed
+  html += `<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">per-row results (${(o.results || []).length})</summary>`;
+  html += `<div class="scroll"><table><tr><th>item</th><th>input</th><th>output</th><th>judge</th><th>metrics</th></tr>` +
+    (o.results || []).map(r => {
+      const j = firstJudgment(r.judgments);
+      return `<tr><td>${esc(r.item_id)}</td><td>${esc(clip(r.row && (r.row.input != null ? r.row.input : r.row), 90))}</td>
+        <td>${r.error ? `<span style="color:var(--red)">${esc(clip(r.error, 90))}</span>` : esc(clip(r.output, 110))}</td>
+        <td>${j ? `<span class="verdict ${esc(j.verdict)}">${esc(j.verdict)}</span> ${esc(j.overall)}` : '—'}</td>
+        <td class="num">${esc(clip(JSON.stringify(r.metrics), 60))}</td></tr>`;
+    }).join('') + '</table></div></details>';
+  return html;
+}
+const firstJudgment = js => { for (const k in (js || {})) if (js[k] && js[k].verdict) return js[k]; return null; };
+
+// the HITL panel: one unlabeled item at a time, buttons + number keys
+function outAnnotate(cell, o) {
+  let html = `<div class="kv">${o.instructions ? esc(o.instructions) + ' · ' : ''}<b>${o.labeled}</b> of <b>${o.total}</b> labeled</div>`;
+  html += `<div class="anno-progress"><i style="width:${o.total ? Math.round(o.labeled / o.total * 100) : 0}%"></i></div>`;
+  const tally = Object.entries(o.tally || {});
+  if (tally.length || o.judge_agreement) {
+    html += `<div class="tally">${tally.map(([l, n]) => `<span><b>${esc(l)}</b>: ${n}</span>`).join('')}` +
+      (o.judge_agreement ? `<span>judge agreement: <b>${Math.round(o.judge_agreement.rate * 100)}%</b> (n=${o.judge_agreement.n})</span>` : '') + `</div>`;
+  }
+
+  const isGolden = o.kind === 'golden';
+  const queue = (o.items || []).filter(it => isGolden ? (it.status === 'draft') : !it.annotation);
+  if (!queue.length) return html + `<div class="kv" style="margin-top:8px">✓ queue clear — ${isGolden ? 'no drafts awaiting review' : 'everything is labeled'}.</div>`;
+
+  const it = queue[0];
+  const set = (cell.config || {}).golden;
+  html += `<div class="anno-item">`;
+  if (isGolden) {
+    html += `<div class="q">draft golden row (${queue.length} awaiting review)</div>` +
+      `<pre class="block">${esc(JSON.stringify(it.row, null, 2))}</pre>` +
+      `<div class="anno-buttons">
+        <button class="primary" data-key="1" onclick="decideGoldenItem('${esc(cell.id)}','${esc(set)}','${esc(it.item_id)}','approved')">approve<span class="key">1</span></button>
+        <button data-key="2" onclick="decideGoldenItem('${esc(cell.id)}','${esc(set)}','${esc(it.item_id)}','rejected')">reject<span class="key">2</span></button>
+      </div>`;
+  } else {
+    const j = firstJudgment(it.judgments);
+    html += `<div class="q">${esc(it.item_id)} · candidate <b>${esc(it.candidate || '')}</b> (${queue.length} left)</div>` +
+      `<div class="kv">input:</div><pre class="block">${esc(clip(it.row && (it.row.input != null ? it.row.input : JSON.stringify(it.row)), 500))}</pre>` +
+      `<div class="kv">output:</div><pre class="block">${it.error ? esc(it.error) : esc(clip(it.output, 900))}</pre>` +
+      (j ? `<div class="kv">judge says: <span class="verdict ${esc(j.verdict)}">${esc(j.verdict)}</span> ${esc(j.overall)} — label blind, then compare</div>` : '');
+    const labels = o.labels || (o.scale ? Array.from({ length: o.scale }, (_, i) => String(i + 1)) : []);
+    html += `<div class="anno-buttons">` + labels.map((l, i) =>
+      `<button ${i === 0 ? 'class="primary"' : ''} data-key="${i + 1}" onclick="annotateItem('${esc(cell.id)}','${esc(it.item_id)}','${esc(l)}')">${esc(l)}<span class="key">${i + 1}</span></button>`
+    ).join('') + `</div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+// a deliberately tiny markdown: headings, paragraphs, inline code, bold — the
+// note cells are prose, not documents; anything richer belongs in docs/
+function mdLite(text) {
+  const blocks = String(text || '').split(/\n\s*\n/);
+  return blocks.map(b => {
+    const t = b.trim();
+    if (!t) return '';
+    const h = t.match(/^(#{1,3})\s+(.*)$/s);
+    if (h) return `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`;
+    return `<p>${inline(t)}</p>`;
+  }).join('');
+  function inline(s) {
+    return esc(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  }
+}
+
+boot().catch(e => { $('#main').innerHTML = `<div class="home">failed to load: ${esc(e.message)}</div>`; });
+</script>
+</body>
+</html>

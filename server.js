@@ -3,11 +3,17 @@
 //
 // GET serves the bench read-only; a small set of localhost POST actions run
 // cells, save cell edits, record annotations, and decide golden rows. Trust
-// model matches ui/server.js: binds 127.0.0.1 for a single local user, no
-// auth; every caller-supplied path resolves through safePath so nothing
-// escapes the workspace; the server executes only notebook cells via the
-// engine — it never shells out and never spawns agents.
-// Usage: node bench/server.js [--port 4460] [--root <repo root>] [--open]
+// model: binds 127.0.0.1 for a single local user, no auth; every
+// caller-supplied path resolves through safePath so nothing escapes the
+// workspace; the server executes only notebook cells via the engine — it
+// never shells out and never spawns agents.
+//
+// Usage: node server.js [--port 4460] [--root <dir>] [--open]
+//
+// The root (default: cwd) decides the workspace model. Standalone, the root
+// itself is one workspace and notebooks live in <root>/_bench/. Inside a
+// throughline checkout — a root with a projects/ folder — each projects/<name>
+// is a workspace, same convention as tl's cockpit UI.
 
 const http = require('http');
 const fs = require('fs');
@@ -19,17 +25,17 @@ function arg(name, fallback) {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 }
 const PORT = parseInt(arg('port', '4460'), 10);
-const ROOT = path.resolve(arg('root', path.resolve(__dirname, '..')));
+const ROOT = path.resolve(arg('root', process.cwd()));
 
-const { isDir, safeRead } = require('../lib/workspace');
-const { createBench } = require('../lib/bench-engine');
-const { createProviders } = require('../lib/bench-providers');
-const { scaffoldDemo } = require('../lib/bench-demo');
-const { parseNotebook, serializeNotebook, slugId, CELL_TYPES } = require('../lib/bench-notebook');
+const { isDir, safeRead } = require('./lib/fsutil');
+const { createBench } = require('./lib/engine');
+const { createProviders } = require('./lib/providers');
+const { scaffoldDemo } = require('./lib/demo');
+const { parseNotebook, serializeNotebook, slugId, CELL_TYPES } = require('./lib/notebook');
 
 const providers = createProviders();
 
-// ---------- workspaces (same convention as ui/server.js) ----------
+// ---------- workspaces ----------
 
 function listWorkspaces() {
   const out = [];
@@ -41,6 +47,8 @@ function listWorkspaces() {
   }
   const sample = path.join(ROOT, 'examples', 'sample-project');
   if (isDir(sample)) out.push({ name: 'sample-project', dir: sample, example: true });
+  // standalone mode: no projects/ layout → the root itself is the workspace
+  if (!out.length) out.push({ name: path.basename(ROOT) || 'bench', dir: ROOT, example: false });
   return out;
 }
 
@@ -246,7 +254,7 @@ function nextCellId(cells, type) {
 
 server.listen(PORT, '127.0.0.1', () => {
   // report the actual bound port — `--port 0` asks the OS for an ephemeral one
-  console.log(`tl bench → http://localhost:${server.address().port}`);
+  console.log(`bench → http://localhost:${server.address().port}`);
   if (args.includes('--open')) {
     const cmd = process.platform === 'darwin' ? 'open'
       : process.platform === 'win32' ? 'start' : 'xdg-open';

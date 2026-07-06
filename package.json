@@ -1,0 +1,15 @@
+{
+  "name": "bench",
+  "version": "0.1.0",
+  "description": "Benchmark models and run experiments in one reactive notebook — agent loops, eval grids, metrics and judges, synthetic golden sets behind a human gate, and HITL annotation. Zero dependencies.",
+  "bin": {
+    "bench": "bin/bench.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

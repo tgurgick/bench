@@ -24,10 +24,9 @@ What you can do in it:
 6. **Configure new metrics and judges** — builtin metric kinds, one-expression
    custom metrics, LLM judges with rubrics, code judges.
 
-> **Status:** incubating inside [throughline](https://github.com/tgurgick/tl)
-> (`bench/`), slated to split into its own repository. The package is fully
-> self-contained — no imports from the host repo — so the split is a
-> `git subtree split -P bench` (or a copy) away.
+> Built with [throughline](https://github.com/tgurgick/tl)'s file discipline
+> (markdown is the database, JSONL is the learning surface, human gates are
+> real); developed against a TL workspace, usable entirely on its own.
 
 ## Quick start
 

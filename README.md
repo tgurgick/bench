@@ -64,6 +64,12 @@ rows:
 ```
 ````
 
+A bare ` ```tl-cell ` line at the top level of the file **always** opens a
+cell — it is indistinguishable from the format itself. To quote the syntax in
+a note (as this README does above), nest it inside an outer fenced code block
+(```` ```` ````, ` ~~~ `, or a longer backtick run); the parser tracks the
+outer fence and keeps everything inside it as prose.
+
 Cells reference each other **by id** (`data: seeds`, `candidates: [concise]`);
 those references are the dependency graph. There is no separate wiring file —
 the edges are visible in the configs. Multi-line strings (templates, rubrics,

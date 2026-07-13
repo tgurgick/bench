@@ -112,6 +112,67 @@ test('bench server drives the whole loop over HTTP', async () => {
   }
 });
 
+test('unknown /api/ paths and missing resources are JSON 404s', async () => {
+  const root = tmpRoot();
+  const { child, base } = await startServer(root);
+  try {
+    // unknown API path: JSON { error }, never the plain-text 404
+    const r = await fetch(base + '/api/nope');
+    assert.equal(r.status, 404);
+    assert.match(r.headers.get('content-type'), /application\/json/);
+    const d = await r.json();
+    assert.equal(typeof d.error, 'string');
+
+    // missing resources on real endpoints: 404 with the same shape
+    const missingNb = await fetch(base + '/api/notebook?ws=demo&nb=missing');
+    assert.equal(missingNb.status, 404);
+    assert.match((await missingNb.json()).error, /not found/);
+    const missingWs = await fetch(base + '/api/notebooks?ws=nope');
+    assert.equal(missingWs.status, 404);
+    assert.match((await missingWs.json()).error, /unknown workspace/);
+
+    // outside /api/ the plain 404 stays — browsers hit these, not api()
+    const plain = await fetch(base + '/nope');
+    assert.equal(plain.status, 404);
+  } finally {
+    child.kill();
+  }
+});
+
+test('a failed run leaves resyncable truth: GET /api/notebook carries partial progress', async () => {
+  const root = tmpRoot();
+  const { child, base } = await startServer(root);
+  try {
+    await post(base, '/api/notebook-create', { ws: 'demo', demo: true });
+
+    // break a mid-plan cell: tooluser becomes a config-error cell (compare's
+    // own `candidates:` still points at it), so running `compare` executes
+    // `seeds` first — topological order — then throws at tooluser
+    await post(base, '/api/cell-save', {
+      ws: 'demo', nb: 'model-compare', id: 'tooluser',
+      raw: 'id: tooluser\ntype: bogus',
+    });
+    const r = await fetch(base + '/api/run', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ws: 'demo', nb: 'model-compare', cell: 'compare', force: true }),
+    });
+    assert.equal(r.status, 422);
+    assert.match((await r.json()).error, /config error/);
+
+    // the client contract: after a failed run, a notebook re-read reflects
+    // what actually executed — seeds ran and is fresh, compare never did.
+    // This is the state the UI must apply on its error path (no stale dots).
+    const nb = await get(base, '/api/notebook?ws=demo&nb=model-compare');
+    assert.ok(nb.state.seeds.ran_at, 'seeds executed before the failure');
+    assert.equal(nb.state.seeds.stale, false);
+    assert.equal(nb.state.seeds.error, null);
+    assert.equal(nb.state.compare.ran_at, null, 'compare never executed');
+    assert.equal(nb.state.compare.stale, true);
+  } finally {
+    child.kill();
+  }
+});
+
 test('standalone mode: a root without projects/ is itself the workspace', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-bench-solo-'));
   const { child, base } = await startServer(root);
@@ -126,6 +187,50 @@ test('standalone mode: a root without projects/ is itself the workspace', async 
     assert.deepEqual(run.ran, ['seeds']);
     // artifacts land under the root itself — no projects/ layer
     assert.ok(fs.existsSync(path.join(root, '_bench', 'runs', 'model-compare', 'cells', 'seeds.json')));
+  } finally {
+    child.kill();
+  }
+});
+
+test('GET /api/journal catalogues runs from bench-log; /api/journal/run returns results', async () => {
+  const root = tmpRoot();
+  const { child, base } = await startServer(root);
+  try {
+    // empty journal before any eval
+    const empty = await get(base, '/api/journal?ws=demo');
+    assert.deepEqual(empty.runs, []);
+    assert.deepEqual(empty.notebooks, []);
+    assert.deepEqual(empty.models, []);
+
+    await post(base, '/api/notebook-create', { ws: 'demo', demo: true });
+    const run = await post(base, '/api/run', { ws: 'demo', nb: 'model-compare' });
+    assert.ok(run.ran.includes('compare'));
+
+    const journal = await get(base, '/api/journal?ws=demo');
+    assert.ok(journal.runs.length >= 1);
+    const entry = journal.runs[0];
+    assert.ok(entry.run_id.startsWith('run-'));
+    assert.equal(entry.notebook, 'model-compare');
+    assert.equal(entry.cell, 'compare');
+    assert.ok(['passed', 'partial', 'failed'].includes(entry.status));
+    assert.ok(entry.n > 0);
+    assert.ok(Array.isArray(entry.models) && entry.models.length >= 1);
+    assert.ok(journal.notebooks.includes('model-compare'));
+    assert.ok(journal.models.length >= 1);
+    // catalogue is newest-first by run_id stamp
+    for (let i = 1; i < journal.runs.length; i++) {
+      assert.ok(journal.runs[i - 1].run_id >= journal.runs[i].run_id);
+    }
+
+    const detail = await get(base, `/api/journal/run?ws=demo&nb=model-compare&run=${encodeURIComponent(entry.run_id)}`);
+    assert.equal(detail.run_id, entry.run_id);
+    assert.ok(detail.summary);
+    assert.ok(Array.isArray(detail.results) && detail.results.length > 0);
+    assert.match(detail.results_path, /results\.jsonl$/);
+
+    const missing = await fetch(base + '/api/journal/run?ws=demo&nb=model-compare&run=run-00000000000000');
+    assert.equal(missing.status, 404);
+    assert.match((await missing.json()).error, /not found/);
   } finally {
     child.kill();
   }

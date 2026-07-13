@@ -75,6 +75,88 @@ test('regenerated cell yaml (no raw) round-trips block scalars', () => {
   assert.equal(p.config.template, 'Question:\n{{input}}\n\nAnswer briefly.');
 });
 
+test('a tl-cell fence quoted inside an outer code block stays prose', () => {
+  const text = [
+    'Docs for the format:',
+    '',
+    '````markdown',
+    '```tl-cell',
+    'id: fake',
+    'type: data',
+    '```',
+    '````',
+    '',
+    'More prose.',
+    '',
+    '```tl-cell',
+    'id: real',
+    'type: data',
+    'rows: []',
+    '```',
+    '',
+  ].join('\n');
+  const nb = parseNotebook(text);
+  assert.deepEqual(nb.cells.map(c => [c.id, c.type]), [['note-1', 'note'], ['real', 'data']]);
+  assert.equal(nb.errors.length, 0);
+  assert.ok(nb.cells[0].text.includes('```tl-cell'));
+  // round-trip identity: the quoted fence survives parse → serialize → parse
+  const nb2 = parseNotebook(serializeNotebook(nb));
+  assert.deepEqual(
+    nb2.cells.map(c => [c.id, c.type, c.text || null]),
+    nb.cells.map(c => [c.id, c.type, c.text || null]),
+  );
+});
+
+test('tilde and plain-backtick outer fences also shield quoted tl-cell fences', () => {
+  const nb = parseNotebook([
+    '~~~\n```tl-cell\nid: a\n```\n~~~',
+    '```js\n// not closed by ```tl-cell below\n```tl-cell\nid: b\n```',
+  ].join('\n\n'));
+  assert.deepEqual(nb.cells.map(c => c.type), ['note']);
+  assert.equal(nb.errors.length, 0);
+});
+
+test('a bare top-level tl-cell fence is always a genuine cell opener', () => {
+  // the FEEDBACK repro — indistinguishable from the format, so it parses as a
+  // (malformed) cell; quoting the syntax requires an outer fence
+  const nb = parseNotebook('See:\n\n```tl-cell\nid: fake\n```\n\nMore\n');
+  assert.deepEqual(nb.cells.map(c => c.type), ['note', 'unknown', 'note']);
+});
+
+test('block scalars indented with a single space do not truncate', () => {
+  const nb = parseNotebook([
+    '```tl-cell',
+    'id: p',
+    'type: prompt',
+    'template: |',
+    ' Question:',
+    ' {{input}}',
+    '',
+    ' Answer briefly.',
+    '```',
+    '',
+  ].join('\n'));
+  assert.equal(nb.errors.length, 0);
+  assert.equal(nb.cells[0].config.template, 'Question:\n{{input}}\n\nAnswer briefly.');
+});
+
+test('block scalar indent follows the first body line', () => {
+  const nb = parseNotebook([
+    '```tl-cell',
+    'id: p',
+    'type: prompt',
+    'template: |',
+    '    deep:',
+    '      deeper',
+    'data: x',
+    '```',
+    '',
+  ].join('\n'));
+  const c = nb.cells[0];
+  assert.equal(c.config.template, 'deep:\n  deeper');
+  assert.equal(c.config.data, 'x');
+});
+
 test('malformed cells degrade to error cells, never throw', () => {
   const nb = parseNotebook('```tl-cell\ntype: data\n```\n\n```tl-cell\nid: x\ntype: nope\n```\n');
   assert.equal(nb.errors.length, 2);
@@ -135,4 +217,39 @@ test('slugId accepts slugs and rejects everything else', () => {
   assert.equal(slugId('My-Cell'), 'my-cell');
   assert.equal(slugId('../evil'), '');
   assert.equal(slugId(''), '');
+});
+
+test('optional threshold on metric/judge cells round-trips', () => {
+  const text = [
+    '```tl-cell',
+    'id: brevity',
+    'type: metric',
+    'kind: expr',
+    'expr: output.length < 240 ? 1 : 0',
+    'threshold: 0.75',
+    '```',
+    '',
+    '```tl-cell',
+    'id: quality',
+    'type: judge',
+    'kind: llm',
+    'provider: fixture',
+    'scale: 5',
+    'threshold: 3.5',
+    'dimensions: [helpfulness]',
+    '```',
+  ].join('\n');
+  const nb = parseNotebook(text);
+  const m = nb.cells.find(c => c.id === 'brevity');
+  const j = nb.cells.find(c => c.id === 'quality');
+  assert.equal(m.config.threshold, 0.75);
+  assert.equal(j.config.threshold, 3.5);
+  // regenerated yaml (no raw) must keep threshold
+  for (const c of nb.cells) delete c.raw;
+  const nb2 = parseNotebook(serializeNotebook(nb));
+  assert.equal(nb2.cells.find(c => c.id === 'brevity').config.threshold, 0.75);
+  assert.equal(nb2.cells.find(c => c.id === 'quality').config.threshold, 3.5);
+  // notebooks without threshold stay valid
+  const plain = parseNotebook(SAMPLE);
+  assert.equal(plain.cells.find(c => c.id === 'bot').config.threshold, undefined);
 });

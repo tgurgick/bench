@@ -1,7 +1,11 @@
 <!doctype html>
 <!-- tl bench — the notebook UI. One file, no build step, no dependencies.
      Served by bench/server.js; everything here renders JSON from /api and
-     posts small actions back. All dynamic content passes through esc(). -->
+     posts small actions back. All dynamic content passes through esc().
+
+     Design: "field guide" — warm paper, botanical ink accent, editorial
+     serif display (system stacks only; no webfonts, no external fetches).
+     Tokens mirror the approved mock; light + dark both first-class. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -9,157 +13,401 @@
 <title>tl bench</title>
 <style>
   :root {
-    --paper: #f7f4ee; --card: #fffdf8; --ink: #2b2925; --muted: #8a857c;
-    --line: #e6e0d4; --accent: #4a6f5d; --accent-soft: #e4ece7;
-    --amber: #b07d2e; --amber-soft: #f5ead4; --red: #a2452f; --red-soft: #f3e0da;
-    --blue: #3d5a80; --blue-soft: #e1e8f0; --win: #4a6f5d;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* field-guide tokens — cooler paper, restrained moss */
+    --bg: #f6f4ee; --surface: #ffffff; --surface-2: #efece4; --surface-3: #e3dfd4;
+    --border: rgba(30, 30, 30, 0.08); --border-2: rgba(30, 30, 30, 0.16);
+    --text-1: #14140f; --text-2: #56564f; --text-3: #8f8f86;
+    --accent: #2f5b34; --accent-2: #457c47; --accent-glow: rgba(47, 91, 52, 0.10);
+    --green: #2f5b34; --green-dim: rgba(47, 91, 52, 0.10);
+    --amber: #8a5a1b; --amber-dim: rgba(138, 90, 27, 0.12);
+    --red: #9a3a2f; --red-dim: rgba(154, 58, 47, 0.12);
+    --node-bg: #ffffff; --node-border: rgba(30, 30, 30, 0.10);
+    --on-accent: #f8f6f0;
+    --radius: 10px;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --display: "Fraunces", "Iowan Old Style", Georgia, serif;
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
-  a { color: var(--accent); }
+  :root.dark {
+    /* candlelit paper */
+    --bg: #1a150d; --surface: #221c13; --surface-2: #2b2418; --surface-3: #382e1f;
+    --border: rgba(240, 220, 180, 0.10); --border-2: rgba(240, 220, 180, 0.20);
+    --text-1: #f4ecda; --text-2: #b8ab8f; --text-3: #7f725a;
+    --accent: #94c48c; --accent-2: #a9d29f; --accent-glow: rgba(148, 196, 140, 0.14);
+    --green: #94c48c; --green-dim: rgba(148, 196, 140, 0.14);
+    --amber: #d68b3f; --amber-dim: rgba(214, 139, 63, 0.16);
+    --red: #e07564; --red-dim: rgba(224, 117, 100, 0.16);
+    --node-bg: #221c13; --node-border: rgba(240, 220, 180, 0.12);
+    --on-accent: #1a150d;
+  }
 
-  header {
-    position: sticky; top: 0; z-index: 20; background: var(--paper);
-    border-bottom: 1px solid var(--line); padding: 10px 20px;
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; overflow: hidden; background: var(--bg); color: var(--text-1);
+    font: 13.5px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   }
-  header .word { font-weight: 700; letter-spacing: .3px; }
-  header .word span { color: var(--accent); }
+  a { color: var(--accent); }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+  /* ---------- the rail: app mark + four views + theme ---------- */
+  .rail {
+    width: 52px; flex: none; display: flex; flex-direction: column; align-items: center;
+    gap: 6px; padding: 10px 0; border-right: 1px solid var(--border); background: var(--bg);
+    height: 100%;
+  }
+  .rail .mark {
+    width: 32px; height: 32px; border-radius: 9px; background: var(--accent);
+    color: var(--on-accent); display: grid; place-items: center; margin-bottom: 10px;
+  }
+  .rail button {
+    width: 34px; height: 34px; border-radius: 9px; border: 1px solid transparent;
+    background: none; color: var(--text-3); cursor: pointer; display: grid; place-items: center;
+    padding: 0;
+  }
+  .rail button:hover { color: var(--text-1); background: var(--surface-2); }
+  .rail button.active { color: var(--accent); border-color: var(--accent); background: var(--surface); }
+  .rail .push { flex: 1; }
+  .rail svg { width: 18px; height: 18px; }
+
+  /* ---------- content column ---------- */
+  .content { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; }
+  .topbar {
+    position: sticky; top: 0; z-index: 20; background: var(--bg);
+    border-bottom: 1px solid var(--border); padding: 9px 20px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
   select, input[type=text] {
-    font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line);
-    border-radius: 8px; padding: 5px 9px;
+    font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border-2);
+    border-radius: 8px; padding: 4px 9px;
   }
   button {
-    font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--card);
-    color: var(--ink); border-radius: 8px; padding: 5px 12px;
+    font: inherit; cursor: pointer; border: 1px solid var(--border-2); background: var(--surface);
+    color: var(--text-1); border-radius: 8px; padding: 4px 12px;
   }
   button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.quiet { border: none; background: none; color: var(--muted); padding: 3px 6px; }
-  button.quiet:hover { color: var(--ink); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  button.quiet { border: none; background: none; color: var(--text-3); padding: 3px 6px; }
+  button.quiet:hover { color: var(--text-1); }
   button:disabled { opacity: .5; cursor: default; }
-  .providers { margin-left: auto; display: flex; gap: 10px; font-size: 12.5px; color: var(--muted); }
+  .providers { margin-left: auto; display: flex; gap: 10px; font-size: 12px; color: var(--text-3); }
   .providers .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
-  .dot.ok { background: var(--accent); } .dot.no { background: var(--line); }
+  .dot.ok { background: var(--accent); } .dot.no { background: var(--border-2); }
 
-  main { max-width: 900px; margin: 0 auto; padding: 18px 20px 120px; }
+  main { width: 100%; max-width: 960px; margin: 0 auto; padding: 6px 24px 120px; }
 
-  /* the graph strip — the n8n nod: the notebook's shape at a glance */
-  .graph { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 10px 2px 16px; }
+  /* ---------- editorial header: serif title, small-caps kicker ---------- */
+  .masthead { padding: 22px 0 6px; }
+  .masthead .kicker {
+    font: 600 10.5px var(--sans); letter-spacing: .14em; text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .masthead h1 {
+    font-family: var(--display); font-weight: 600; font-size: 30px; line-height: 1.15;
+    letter-spacing: -0.01em; margin: 4px 0 2px;
+  }
+  .masthead .sub { font-style: italic; color: var(--text-2); font-size: 13.5px; }
+
+  /* notebook toolbar under the masthead */
+  .nb-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 12px 0 16px; }
+  .nb-tools .sep { color: var(--border-2); margin: 0 2px; }
+
+  /* placeholder panel for views that arrive with later specs */
+  .plate {
+    background: var(--surface); border: 1px dashed var(--border-2); border-radius: 12px;
+    padding: 42px 24px; text-align: center; color: var(--text-2); margin-top: 14px;
+  }
+  .plate .glyph { font-family: var(--display); font-size: 26px; color: var(--text-3); }
+  .plate b { color: var(--text-1); }
+  .plate .spec { font-family: var(--mono); font-size: 12px; color: var(--text-3); }
+
+  /* ---------- the graph strip — the notebook's shape at a glance ---------- */
+  .graph { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 2px 2px 14px; }
   .graph .gcell {
-    font-size: 12px; font-family: var(--mono); padding: 2px 9px; border-radius: 999px;
-    background: var(--card); border: 1px solid var(--line); cursor: pointer; white-space: nowrap;
+    font-size: 11.5px; font-family: var(--mono); padding: 2px 9px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--border-2); cursor: pointer; white-space: nowrap;
+    color: var(--text-2);
   }
-  .graph .gcell.stale { border-color: var(--amber); background: var(--amber-soft); }
-  .graph .gcell.err { border-color: var(--red); background: var(--red-soft); }
-  .graph .arrow { color: var(--muted); font-size: 11px; }
+  .graph .gcell.fresh { border-color: var(--accent); color: var(--accent); background: var(--green-dim); }
+  .graph .gcell.stale { border-color: var(--amber); background: var(--amber-dim); color: var(--amber); }
+  .graph .gcell.err { border-color: var(--red); background: var(--red-dim); color: var(--red); }
+  .graph .arrow { color: var(--text-3); font-size: 11px; }
 
+  /* ---------- cells as field-guide cards ---------- */
   .cell {
-    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
     margin: 0 0 14px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(30, 30, 30, 0.04);
+    transition: border-color .15s;
   }
-  .cell.note { background: none; border: none; border-radius: 0; }
+  .cell:focus-within, .cell.editing { border-color: var(--border-2); }
+  .cell.note { background: none; border: none; border-radius: 0; box-shadow: none; }
   .cell-head {
     display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-    border-bottom: 1px solid var(--line); background: rgba(0,0,0,.012);
+    border-bottom: 1px solid var(--border);
   }
   .chip {
-    font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
-    padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+    font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; background: var(--surface-3); color: var(--text-2);
   }
-  .chip.data { background: var(--blue-soft); color: var(--blue); }
-  .chip.agent { background: #efe4f0; color: #7a4a80; }
-  .chip.metric, .chip.judge { background: var(--amber-soft); color: var(--amber); }
-  .chip.eval { background: #e8e2f5; color: #5b4a9e; }
-  .chip.annotate { background: #f0e4de; color: #9c5c34; }
-  .chip.golden { background: #f5efd4; color: #8b7a1e; }
-  .cid { font-family: var(--mono); font-size: 13px; font-weight: 600; }
-  .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+  .chip.data, .chip.eval { background: var(--green-dim); color: var(--accent); }
+  .chip.agent, .chip.metric, .chip.judge, .chip.golden { background: var(--amber-dim); color: var(--amber); }
+  .chip.annotate { background: var(--red-dim); color: var(--red); }
+  .cid { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
   .status-dot.stale { background: var(--amber); }
-  .status-dot.never { background: var(--line); }
+  .status-dot.never { background: var(--border-2); }
   .status-dot.err { background: var(--red); }
-  .cell-head .when { color: var(--muted); font-size: 12px; }
+  .cell-head .when { color: var(--text-3); font-size: 11.5px; }
   .cell-head .spacer { flex: 1; }
 
-  .editor { display: none; border-bottom: 1px solid var(--line); }
+  .editor { display: none; border-bottom: 1px solid var(--border); }
   .cell.editing .editor { display: block; }
   textarea {
-    display: block; width: 100%; border: none; background: #faf7f0; color: var(--ink);
-    font: 13px/1.5 var(--mono); padding: 12px 14px; min-height: 60px; resize: vertical; outline: none;
+    display: block; width: 100%; border: none; background: var(--surface-2); color: var(--text-1);
+    font: 12.5px/1.5 var(--mono); padding: 12px 14px; min-height: 60px; resize: vertical; outline: none;
   }
-  .editor .bar { display: flex; gap: 8px; padding: 6px 12px; background: #faf7f0; border-top: 1px dashed var(--line); }
+  .editor .bar { display: flex; gap: 8px; padding: 6px 12px; background: var(--surface-2); border-top: 1px dashed var(--border-2); align-items: center; }
 
-  .out { padding: 12px 14px; }
-  .out .err { color: var(--red); font-family: var(--mono); font-size: 13px; white-space: pre-wrap; }
-  .out .empty { color: var(--muted); font-size: 13.5px; }
-  .kv { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
-  .kv b { color: var(--ink); font-weight: 600; }
+  /* the output strip: flat inset on paper tint, like the mock's result rows */
+  .out { padding: 11px 14px; }
+  .out .err { color: var(--red); font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; }
+  .out .empty { color: var(--text-3); font-size: 13px; }
+  .kv { color: var(--text-2); font-size: 12px; margin-top: 6px; }
+  .kv b { color: var(--text-1); font-weight: 600; }
 
-  table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-3); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; }
   td.num, th.num { text-align: right; font-family: var(--mono); }
   .scroll { overflow-x: auto; }
-  .winner { color: var(--win); font-weight: 700; }
-  .verdict { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
-  .verdict.pass { background: var(--accent-soft); color: var(--accent); }
-  .verdict.fail { background: var(--red-soft); color: var(--red); }
+  .winner { color: var(--green); font-weight: 700; }
+  .verdict { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--text-2); }
+  .verdict.pass { background: var(--green-dim); color: var(--accent); }
+  .verdict.fail { background: var(--red-dim); color: var(--red); }
 
   pre.block {
-    background: #f2eee4; border-radius: 8px; padding: 10px 12px; overflow-x: auto;
-    font: 12.5px/1.5 var(--mono); white-space: pre-wrap; margin: 8px 0;
+    background: var(--surface-2); border-radius: 8px; padding: 10px 12px; overflow-x: auto;
+    font: 12px/1.5 var(--mono); white-space: pre-wrap; margin: 8px 0; color: var(--text-1);
   }
-  .trace { margin-top: 8px; border-left: 2px solid var(--line); padding-left: 12px; }
-  .trace .t { font: 12.5px/1.6 var(--mono); margin: 2px 0; }
-  .trace .t .tag { color: var(--muted); }
-  .trace .t.tool .tag { color: var(--blue); }
+  .trace { margin-top: 8px; border-left: 2px solid var(--border-2); padding-left: 12px; }
+  .trace .t { font: 12px/1.6 var(--mono); margin: 2px 0; }
+  .trace .t .tag { color: var(--text-3); }
+  .trace .t.tool .tag { color: var(--accent-2); }
 
   .note-body { padding: 4px 2px; }
-  .note-body h1 { font-size: 22px; margin: 18px 0 6px; }
-  .note-body h2 { font-size: 18px; margin: 16px 0 6px; }
-  .note-body p { margin: 8px 0; color: #4c4841; }
-  .note-body code { background: #efe9db; border-radius: 4px; padding: 0 5px; font: 12.5px var(--mono); }
-  .note-edit { color: var(--muted); float: right; opacity: 0; }
+  .note-body h1 { font-family: var(--display); font-weight: 600; letter-spacing: -0.01em; font-size: 24px; margin: 20px 0 6px; }
+  .note-body h2 { font-family: var(--display); font-weight: 600; font-size: 19px; margin: 16px 0 6px; }
+  .note-body h3 { font-family: var(--display); font-weight: 600; font-size: 16px; margin: 14px 0 4px; }
+  .note-body p { margin: 8px 0; color: var(--text-2); }
+  .note-body code { background: var(--surface-3); border-radius: 4px; padding: 0 5px; font: 12px var(--mono); color: var(--text-1); }
+  .note-edit { color: var(--text-3); float: right; opacity: 0; }
   .cell.note:hover .note-edit { opacity: 1; }
 
-  /* annotation panel — the HITL surface */
-  .anno-progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 8px 0; }
+  /* ---------- annotation panel — the HITL surface stays loud ---------- */
+  .anno-progress { height: 6px; background: var(--surface-3); border-radius: 999px; overflow: hidden; margin: 8px 0; }
   .anno-progress i { display: block; height: 100%; background: var(--accent); }
-  .anno-item { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 10px; background: #fbf9f3; }
-  .anno-item .q { color: var(--muted); font-size: 12.5px; margin-bottom: 4px; }
+  .anno-item {
+    border: 1px solid var(--border-2); border-left: 3px solid var(--accent);
+    border-radius: var(--radius); padding: 12px 14px; margin-top: 10px; background: var(--surface-2);
+  }
+  .anno-item .q { color: var(--text-2); font-size: 12px; margin-bottom: 4px; }
   .anno-buttons { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
-  .anno-buttons .key { color: var(--muted); font-size: 11px; margin-left: 4px; }
-  .tally { display: flex; gap: 12px; font-size: 12.5px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
-
-  .addbar { display: flex; gap: 6px; align-items: center; justify-content: center; padding: 4px 0 24px; flex-wrap: wrap; }
-  .addbar span { color: var(--muted); font-size: 12.5px; }
+  .anno-buttons .key { color: var(--text-3); font-size: 11px; margin-left: 4px; }
+  .tally { display: flex; gap: 12px; font-size: 12px; color: var(--text-2); margin-top: 8px; flex-wrap: wrap; }
 
   .toast {
     position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
-    background: var(--ink); color: var(--paper); border-radius: 10px; padding: 8px 16px;
-    font-size: 13.5px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 50;
+    background: var(--text-1); color: var(--bg); border-radius: 10px; padding: 8px 16px;
+    font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 50;
   }
   .toast.show { opacity: .95; }
   .spin { display: inline-block; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .home { color: var(--muted); text-align: center; padding: 60px 0; }
+  .home { color: var(--text-2); text-align: center; padding: 60px 0; }
+
+  /* ---------- results — stat cards + scatter ---------- */
+  .results-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 14px 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+  }
+  .results-bar .hint { color: var(--text-3); font-size: 12.5px; font-style: italic; }
+  .results-bar .filters { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .results-bar select {
+    font-size: 12px; padding: 3px 8px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--border-2);
+  }
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-bottom: 18px;
+  }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+    padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .stat-card .label {
+    font: 600 10px var(--sans); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-3); margin-bottom: 6px;
+  }
+  .stat-card .value {
+    font-family: var(--display); font-size: 28px; font-weight: 600;
+    color: var(--text-1); line-height: 1.1;
+  }
+  .stat-card .delta {
+    display: inline-block; margin-top: 6px; font-size: 11.5px; font-family: var(--mono);
+    padding: 2px 7px; border-radius: 999px; background: var(--surface-2); color: var(--text-2);
+  }
+  .stat-card .delta.up { background: var(--green-dim); color: var(--accent); }
+  .stat-card .delta.down { background: var(--red-dim); color: var(--red); }
+  .stat-card .note { margin-top: 6px; font-size: 11.5px; color: var(--text-3); }
+  .scatter-wrap {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+    padding: 14px 16px 10px; box-shadow: var(--shadow);
+  }
+  .scatter-head {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px;
+  }
+  .scatter-head h2 {
+    font-family: var(--display); font-size: 18px; font-weight: 600; margin: 0; color: var(--text-1);
+  }
+  .scatter-legend { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
+  .scatter-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .scatter-legend i {
+    width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: currentColor;
+  }
+  .scatter-svg { width: 100%; height: auto; display: block; }
+  .scatter-svg .axis { stroke: var(--border-2); stroke-width: 1; }
+  .scatter-svg .tick { fill: var(--text-3); font: 10px var(--mono); }
+  .scatter-svg .threshold {
+    stroke: var(--amber); stroke-width: 1.25; stroke-dasharray: 5 4; opacity: .85;
+  }
+  .scatter-svg .pt { stroke: var(--bg); stroke-width: 1.25; opacity: .92; }
+  .scatter-svg .pt:hover { opacity: 1; stroke-width: 2; }
+  .results-empty {
+    text-align: center; padding: 48px 16px; color: var(--text-2);
+  }
+  .results-empty .glyph { font-family: var(--display); font-size: 28px; color: var(--text-3); margin-bottom: 8px; }
+
+  /* ---------- journal — run history catalog ---------- */
+  .journal-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 14px 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+  }
+  .journal-count { color: var(--text-2); font-size: 12.5px; }
+  .journal-count b { color: var(--text-1); font-weight: 600; }
+  .journal-filters { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .journal-filters select {
+    font-size: 12px; padding: 3px 8px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--border-2);
+  }
+  .journal-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .journal-table th {
+    text-align: left; padding: 10px 8px; color: var(--text-3);
+    font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .1em;
+    border-bottom: 1px solid var(--border-2);
+  }
+  .journal-table td {
+    padding: 12px 8px; border-bottom: 1px solid var(--border); vertical-align: middle;
+  }
+  .journal-table tr.run-row { cursor: pointer; transition: background .12s; }
+  .journal-table tr.run-row:hover { background: var(--surface-2); }
+  .journal-table tr.run-row.newest { background: var(--accent-glow); }
+  .journal-table tr.run-row.newest:hover { background: var(--green-dim); }
+  .journal-table tr.open { background: var(--surface-2); }
+  .jid { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text-1); }
+  .pill {
+    display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+    padding: 2px 9px; border-radius: 999px; text-transform: capitalize;
+  }
+  .pill.passed { background: var(--green-dim); color: var(--green); }
+  .pill.partial { background: var(--amber-dim); color: var(--amber); }
+  .pill.failed { background: var(--red-dim); color: var(--red); }
+  .j-pipe .name { font-weight: 600; color: var(--text-1); }
+  .j-pipe .meta { display: block; font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+  .j-model { font-size: 12px; color: var(--text-2); max-width: 140px; }
+  .score-cell { min-width: 88px; }
+  .score-bar {
+    height: 5px; background: var(--surface-3); border-radius: 999px; overflow: hidden; margin-bottom: 3px;
+  }
+  .score-bar i { display: block; height: 100%; border-radius: 999px; }
+  .score-bar i.hi { background: var(--green); }
+  .score-bar i.mid { background: var(--amber); }
+  .score-bar i.lo { background: var(--red); }
+  .score-val { font-family: var(--mono); font-size: 12px; color: var(--text-1); }
+  .j-num { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+  .j-time { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+  .journal-detail {
+    margin: 8px 0 18px; padding: 14px 16px; background: var(--surface);
+    border: 1px solid var(--border-2); border-radius: var(--radius);
+  }
+  .journal-detail .detail-head {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .journal-detail .detail-head .back {
+    border: none; background: none; color: var(--text-3); padding: 2px 4px; cursor: pointer;
+  }
+  .journal-detail .detail-head .back:hover { color: var(--text-1); }
+  .journal-empty {
+    background: var(--surface); border: 1px dashed var(--border-2); border-radius: 12px;
+    padding: 48px 28px; text-align: center; color: var(--text-2); margin-top: 18px;
+  }
+  .journal-empty .glyph { font-family: var(--display); font-size: 28px; color: var(--text-3); margin-bottom: 8px; }
+  .journal-empty p { max-width: 420px; margin: 8px auto; line-height: 1.6; }
+  .journal-empty .hint { font-size: 12.5px; color: var(--text-3); font-style: italic; }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="word">tl <span>bench</span></div>
-  <select id="ws"></select>
-  <select id="nb"></select>
-  <button id="new-nb" class="quiet" title="new notebook">+ notebook</button>
-  <button id="demo-nb" class="quiet" title="scaffold the demo notebook">demo</button>
-  <button id="run-all" class="primary">▶ run all</button>
-  <div class="providers" id="providers"></div>
-</header>
+<nav class="rail" id="rail">
+  <div class="mark" title="tl bench">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <path d="M12 21C12 13 8 9 5 4c7 1 12 5 12 11 0 3-2 6-5 6z"/><path d="M12 21c0-6 2-9 5-12"/>
+    </svg>
+  </div>
+  <button data-view="flow" title="flow — the cell graph">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <circle cx="5" cy="6" r="2.4"/><circle cx="5" cy="18" r="2.4"/><circle cx="19" cy="12" r="2.4"/>
+      <path d="M7.4 6.6 16.7 11M7.4 17.4 16.7 13"/>
+    </svg>
+  </button>
+  <button data-view="notebook" title="field notebook">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <path d="M4 4.5h8.5a3 3 0 0 1 3 3V20H7a3 3 0 0 1-3-3z"/><path d="M19.5 7.5V20h-4"/>
+    </svg>
+  </button>
+  <button data-view="results" title="bench results">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 13h4l2.2-6.5L13.5 18l2.3-5H21"/>
+    </svg>
+  </button>
+  <button data-view="journal" title="journal — run history">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9 9.5V19.5"/>
+    </svg>
+  </button>
+  <div class="push"></div>
+  <button id="theme" title="light / dark">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+</nav>
 
-<main id="main"><div class="home">loading…</div></main>
+<div class="content">
+  <header class="topbar">
+    <select id="ws" title="workspace"></select>
+    <select id="nb" title="notebook"></select>
+    <button id="new-nb" class="quiet" title="new notebook">+ notebook</button>
+    <button id="demo-nb" class="quiet" title="scaffold the demo notebook">demo</button>
+    <button id="run-all" class="primary">▶ run all</button>
+    <div class="providers" id="providers"></div>
+  </header>
+  <main id="main"><div class="home">loading…</div></main>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -167,7 +415,13 @@
 // ---------------------------------------------------------------------------
 // state + plumbing
 // ---------------------------------------------------------------------------
-const S = { ws: null, nb: null, boot: null, notebook: null, running: new Set(), editing: new Set(), annoPos: {} };
+const S = {
+  ws: null, nb: null, boot: null, notebook: null,
+  running: new Set(), editing: new Set(), view: 'notebook',
+  journal: { runs: [], notebooks: [], models: [], nbFilter: '', modelFilter: '', detail: null, openId: null },
+  results: { runs: [], models: [], modelFilter: '', xKey: '', yKey: '' },
+};
+const MODEL_COLORS = ['#2f5b34', '#457c47', '#8b6914', '#a35d3a', '#3d5a80', '#6b4c7a', '#2a6f6f', '#7a4e2d'];
 
 const $ = s => document.querySelector(s);
 function esc(s) {
@@ -175,19 +429,24 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+// class-attribute values (verdicts etc.) are slug-sanitized, not HTML-escaped:
+// entities would break CSS class matching (review finding).
+const cls = s => String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9_-]/g, '');
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200);
 }
 async function api(path) {
   const r = await fetch(path);
-  const d = await r.json();
+  const d = await r.json().catch(() => null); // non-JSON body → fall back to the status
+  if (!r.ok) throw new Error((d && d.error) || `request failed (HTTP ${r.status})`);
   if (d && d.error) throw new Error(d.error);
   return d;
 }
 async function post(path, body) {
   const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const d = await r.json();
+  const d = await r.json().catch(() => null);
+  if (!r.ok) throw new Error((d && d.error) || `request failed (HTTP ${r.status})`);
   if (d && d.error) throw new Error(d.error);
   return d;
 }
@@ -201,6 +460,41 @@ const ago = ts => {
 };
 
 // ---------------------------------------------------------------------------
+// theme + views
+// ---------------------------------------------------------------------------
+function applyTheme(t) {
+  document.documentElement.classList.toggle('dark', t === 'dark');
+}
+(function initTheme() {
+  const saved = localStorage.getItem('bench.theme');
+  applyTheme(saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+})();
+$('#theme').onclick = () => {
+  const dark = !document.documentElement.classList.contains('dark');
+  localStorage.setItem('bench.theme', dark ? 'dark' : 'light');
+  applyTheme(dark ? 'dark' : 'light');
+};
+
+const VIEWS = {
+  flow:     { kicker: 'SPECIMEN', sub: 'the cell graph, drawn from the ledger', spec: 'ui-flow-canvas' },
+  notebook: { kicker: 'FIELD NOTEBOOK', sub: 'loose observations & scratch analysis', spec: null },
+  results:  { kicker: 'BENCH RESULTS', sub: 'how the models scored across the trials', spec: 'ui-results-dashboard' },
+  journal:  { kicker: 'JOURNAL', sub: 'every run, catalogued', spec: 'ui-journal-run-history' },
+};
+async function setView(v) {
+  if (!VIEWS[v]) return;
+  S.view = v; localStorage.setItem('bench.view', v);
+  for (const b of document.querySelectorAll('#rail button[data-view]'))
+    b.classList.toggle('active', b.dataset.view === v);
+  if (v === 'journal') await loadJournal();
+  else if (v === 'results') await loadResults();
+  else render();
+}
+for (const b of document.querySelectorAll('#rail button[data-view]'))
+  b.onclick = () => { setView(b.dataset.view); };
+S.view = VIEWS[localStorage.getItem('bench.view')] ? localStorage.getItem('bench.view') : 'notebook';
+
+// ---------------------------------------------------------------------------
 // boot + navigation
 // ---------------------------------------------------------------------------
 async function boot() {
@@ -212,6 +506,7 @@ async function boot() {
   S.ws = localStorage.getItem('bench.ws');
   if (!S.boot.workspaces.some(w => w.name === S.ws)) S.ws = (S.boot.workspaces[0] || {}).name || null;
   if (S.ws) wsSel.value = S.ws;
+  await setView(S.view);
   await loadNotebooks();
 }
 
@@ -223,6 +518,8 @@ async function loadNotebooks() {
   const remembered = localStorage.getItem('bench.nb.' + S.ws);
   S.nb = d.notebooks.some(n => n.name === remembered) ? remembered : (d.notebooks[0] || {}).name || null;
   if (S.nb) { sel.value = S.nb; await loadNotebook(); }
+  else if (S.view === 'journal') { await loadJournal(); }
+  else if (S.view === 'results') { await loadResults(); }
   else {
     $('#main').innerHTML = '<div class="home">No notebooks in this workspace yet.<br><br>' +
       '<button class="primary" onclick="makeDemo()">scaffold the demo notebook</button></div>';
@@ -266,8 +563,17 @@ async function runCell(id) {
     const r = await post('/api/run', { ws: S.ws, nb: S.nb, cell: id || undefined, force: Boolean(id) });
     S.notebook = r.notebook;
     toast(r.ran.length ? 'ran: ' + r.ran.join(', ') : 'nothing stale');
-  } catch (e) { toast(String(e.message || e)); }
-  S.running.delete(key); render();
+  } catch (e) {
+    toast(String(e.message || e));
+    // a failed run may still have executed part of its plan — resync from disk
+    // so fresh/stale dots and error markers reflect what actually happened
+    try { S.notebook = await api('/api/notebook?ws=' + encodeURIComponent(S.ws) + '&nb=' + encodeURIComponent(S.nb)); }
+    catch { /* server unreachable — keep the last known view */ }
+  }
+  S.running.delete(key);
+  if (S.view === 'journal') loadJournal();
+  else if (S.view === 'results') loadResults();
+  else render();
 }
 
 async function saveCell(id) {
@@ -311,7 +617,6 @@ function toggleEdit(id) {
 async function annotateItem(cellId, itemId, label) {
   try {
     await post('/api/annotate', { ws: S.ws, nb: S.nb, cell: cellId, item_id: itemId, label });
-    S.annoPos[cellId] = (S.annoPos[cellId] || 0); // stays; queue advances because item is now labeled
     const r = await post('/api/run', { ws: S.ws, nb: S.nb, cell: cellId, force: true });
     S.notebook = r.notebook; render();
   } catch (e) { toast(String(e.message || e)); }
@@ -326,40 +631,543 @@ async function decideGoldenItem(cellId, set, itemId, status) {
 }
 
 // ---------------------------------------------------------------------------
-// render
+// render — masthead + view dispatch
 // ---------------------------------------------------------------------------
+function masthead() {
+  const v = VIEWS[S.view];
+  const title = S.view === 'notebook'
+    ? (S.notebook && (S.notebook.meta.title || S.notebook.name)) || 'Field notebook'
+    : { flow: 'The specimen', results: 'The bench', journal: 'Journal' }[S.view];
+  const kicker = v.kicker + (S.nb ? ' · ' + S.nb : '');
+  return `<div class="masthead"><div class="kicker">${esc(kicker)}</div>
+    <h1>${esc(title)}</h1><div class="sub">${esc(v.sub)}</div></div>`;
+}
+
+function plate(view) {
+  return masthead() + `<div class="plate"><div class="glyph">❦</div>
+    <p>This plate is still being drawn — the <b>${esc(view)}</b> view arrives with its own spec.</p>
+    <p class="spec">specs/${esc(VIEWS[S.view].spec)}/</p></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// results — stat cards + metric scatter
+// ---------------------------------------------------------------------------
+async function loadResults() {
+  if (!S.ws) {
+    $('#main').innerHTML = masthead() + '<div class="results-empty"><div class="glyph">❧</div><p>Pick a workspace to open the bench.</p></div>';
+    return;
+  }
+  try {
+    const d = await api('/api/journal?ws=' + encodeURIComponent(S.ws));
+    S.results.runs = d.runs || [];
+    S.results.models = d.models || [];
+    const series = resultsSeriesKeys(S.results.runs);
+    if (!series.includes(S.results.xKey)) S.results.xKey = series[0] || '';
+    if (!series.includes(S.results.yKey)) S.results.yKey = series[1] || series[0] || '';
+    renderResults();
+  } catch (e) {
+    $('#main').innerHTML = masthead() + `<div class="results-empty"><div class="glyph">❧</div>
+      <p>Could not read trial results: ${esc(e.message || e)}</p></div>`;
+  }
+}
+
+function resultsSeriesKeys(runs) {
+  const keys = new Set();
+  for (const r of runs || []) {
+    for (const c of r.candidates || []) {
+      if (c.judge_overall_mean != null && typeof c.judge_overall_mean === 'number') keys.add('judge_overall_mean');
+      if (c.metrics && typeof c.metrics === 'object') {
+        for (const k of Object.keys(c.metrics)) {
+          if (typeof c.metrics[k] === 'number') keys.add(k);
+        }
+      }
+    }
+  }
+  return [...keys];
+}
+
+function resultsPoints(runs, modelFilter) {
+  const out = [];
+  for (const r of runs || []) {
+    for (const c of r.candidates || []) {
+      const model = [c.provider, c.model].filter(Boolean).join('/') || c.candidate || 'unknown';
+      if (modelFilter && model !== modelFilter) continue;
+      out.push({
+        run_id: r.run_id,
+        notebook: r.notebook,
+        cell: r.cell,
+        date: r.date,
+        candidate: c.candidate,
+        model,
+        winner: Boolean(c.winner),
+        judge_overall_mean: c.judge_overall_mean,
+        metrics: c.metrics || {},
+        n: c.n,
+        errors: c.errors,
+        stamp: runStampMs(r),
+      });
+    }
+  }
+  return out;
+}
+
+function runStampMs(run) {
+  const m = String(run.run_id || '').match(/^run-(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?/);
+  if (m) {
+    const iso = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] || '00'}Z`;
+    const d = new Date(iso);
+    if (!Number.isNaN(d.getTime())) return d.getTime();
+  }
+  if (run.date) {
+    const d = new Date(run.date + 'T12:00:00Z');
+    if (!Number.isNaN(d.getTime())) return d.getTime();
+  }
+  return 0;
+}
+
+function pointSeriesValue(pt, key) {
+  if (!key) return null;
+  if (key === 'judge_overall_mean') return typeof pt.judge_overall_mean === 'number' ? pt.judge_overall_mean : null;
+  if (pt.metrics && typeof pt.metrics[key] === 'number') return pt.metrics[key];
+  return null;
+}
+
+function notebookThresholds() {
+  const cells = (S.notebook && S.notebook.cells) || [];
+  const out = [];
+  for (const c of cells) {
+    if (c.type !== 'metric' && c.type !== 'judge') continue;
+    const t = c.config && c.config.threshold;
+    if (typeof t === 'number' && Number.isFinite(t)) out.push({ id: c.id, type: c.type, threshold: t });
+  }
+  return out;
+}
+
+function resultsStats(points) {
+  const cards = [];
+  const scored = points
+    .map(p => ({ p, score: p.judge_overall_mean != null ? p.judge_overall_mean : firstMetricNum(p.metrics) }))
+    .filter(x => typeof x.score === 'number')
+    .sort((a, b) => b.score - a.score);
+  if (scored.length) {
+    const best = scored[0];
+    const prev = scored[1];
+    const delta = prev ? best.score - prev.score : null;
+    cards.push({
+      label: 'Best overall score',
+      value: fmtScore(best.score),
+      delta: delta == null ? null : { text: `${delta >= 0 ? '+' : ''}${fmtScore(delta)} ${best.p.model} · ${best.p.run_id}`, dir: delta >= 0 ? 'up' : 'down' },
+      note: `${best.p.model} · ${best.p.run_id}`,
+    });
+  }
+  const dayMs = 86400000;
+  const now = new Date();
+  const startToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const startYday = startToday - dayMs;
+  const today = points.filter(p => p.stamp >= startToday);
+  const yday = points.filter(p => p.stamp >= startYday && p.stamp < startToday);
+  const todayRuns = new Set(today.map(p => p.run_id)).size;
+  const ydayRuns = new Set(yday.map(p => p.run_id)).size;
+  if (todayRuns || ydayRuns || points.length) {
+    const d = todayRuns - ydayRuns;
+    cards.push({
+      label: 'Eval runs today',
+      value: String(todayRuns),
+      delta: { text: `${d >= 0 ? '+' : ''}${d} vs yesterday`, dir: d >= 0 ? 'up' : 'down' },
+    });
+  }
+  // latency lives on raw bench-log rows; /api/journal does not expose it yet — hide, don't fake
+  const ths = notebookThresholds();
+  if (ths.length) {
+    const t = ths[0].threshold;
+    let pass = 0, total = 0;
+    for (const p of points) {
+      const s = p.judge_overall_mean != null ? p.judge_overall_mean : firstMetricNum(p.metrics);
+      if (typeof s !== 'number') continue;
+      total++;
+      // normalize 1–5 judge scales roughly onto 0–1 when threshold ≤ 1
+      const cmp = (t <= 1 && s > 1) ? s / 5 : s;
+      if (cmp >= t) pass++;
+    }
+    if (total) {
+      const rate = pass / total * 100;
+      cards.push({
+        label: 'Pass rate',
+        value: rate.toFixed(1) + '%',
+        note: `threshold = ${t} (${ths[0].id})`,
+      });
+    }
+  }
+  return cards;
+}
+
+function firstMetricNum(metrics) {
+  if (!metrics || typeof metrics !== 'object') return null;
+  for (const k of Object.keys(metrics)) {
+    if (typeof metrics[k] === 'number') return metrics[k];
+  }
+  return null;
+}
+
+function fmtScore(n) {
+  if (n == null || Number.isNaN(Number(n))) return '—';
+  const v = Number(n);
+  return Number.isInteger(v) ? String(v) : v.toFixed(3).replace(/\.?0+$/, m => m.includes('.') ? m.replace(/0+$/, '').replace(/\.$/, '') : m);
+}
+
+function modelColor(model, models) {
+  const i = Math.max(0, models.indexOf(model));
+  return MODEL_COLORS[i % MODEL_COLORS.length];
+}
+
+function renderScatterSvg(points, xKey, yKey, models, threshold) {
+  const W = 720, H = 340, pad = { l: 44, r: 18, t: 16, b: 36 };
+  const plotW = W - pad.l - pad.r, plotH = H - pad.t - pad.b;
+  const vals = points.map(p => ({
+    p,
+    x: pointSeriesValue(p, xKey),
+    y: pointSeriesValue(p, yKey),
+  })).filter(v => v.x != null && v.y != null);
+  if (!vals.length) {
+    return `<svg class="scatter-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="empty scatter">
+      <text x="${W / 2}" y="${H / 2}" text-anchor="middle" class="tick">no points for these axes</text></svg>`;
+  }
+  let xmin = Math.min(...vals.map(v => v.x));
+  let xmax = Math.max(...vals.map(v => v.x));
+  let ymin = Math.min(...vals.map(v => v.y));
+  let ymax = Math.max(...vals.map(v => v.y));
+  if (xmin === xmax) { xmin -= 0.5; xmax += 0.5; }
+  if (ymin === ymax) { ymin -= 0.5; ymax += 0.5; }
+  const padFrac = 0.08;
+  const xspan = xmax - xmin, yspan = ymax - ymin;
+  xmin -= xspan * padFrac; xmax += xspan * padFrac;
+  ymin -= yspan * padFrac; ymax += yspan * padFrac;
+  const sx = v => pad.l + (v - xmin) / (xmax - xmin) * plotW;
+  const sy = v => pad.t + (1 - (v - ymin) / (ymax - ymin)) * plotH;
+  let svg = `<svg class="scatter-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(xKey)} vs ${esc(yKey)}">`;
+  svg += `<line class="axis" x1="${pad.l}" y1="${pad.t + plotH}" x2="${pad.l + plotW}" y2="${pad.t + plotH}"/>`;
+  svg += `<line class="axis" x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + plotH}"/>`;
+  svg += `<text class="tick" x="${pad.l + plotW / 2}" y="${H - 8}" text-anchor="middle">${esc(xKey)}</text>`;
+  svg += `<text class="tick" x="12" y="${pad.t + plotH / 2}" text-anchor="middle" transform="rotate(-90 12 ${pad.t + plotH / 2})">${esc(yKey)}</text>`;
+  svg += `<text class="tick" x="${pad.l}" y="${pad.t + plotH + 14}">${esc(fmtScore(xmin))}</text>`;
+  svg += `<text class="tick" x="${pad.l + plotW}" y="${pad.t + plotH + 14}" text-anchor="end">${esc(fmtScore(xmax))}</text>`;
+  svg += `<text class="tick" x="${pad.l - 6}" y="${pad.t + plotH}" text-anchor="end">${esc(fmtScore(ymin))}</text>`;
+  svg += `<text class="tick" x="${pad.l - 6}" y="${pad.t + 8}" text-anchor="end">${esc(fmtScore(ymax))}</text>`;
+  if (typeof threshold === 'number') {
+    if (threshold >= xmin && threshold <= xmax) {
+      const x = sx(threshold);
+      svg += `<line class="threshold" x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t + plotH}"/>`;
+    }
+    if (threshold >= ymin && threshold <= ymax) {
+      const y = sy(threshold);
+      svg += `<line class="threshold" x1="${pad.l}" y1="${y}" x2="${pad.l + plotW}" y2="${y}"/>`;
+    }
+  }
+  for (const v of vals) {
+    const color = modelColor(v.p.model, models);
+    const title = `${v.p.model} · ${v.p.run_id} · ${xKey}=${fmtScore(v.x)} · ${yKey}=${fmtScore(v.y)}`;
+    svg += `<circle class="pt" cx="${sx(v.x)}" cy="${sy(v.y)}" r="6" fill="${color}"><title>${esc(title)}</title></circle>`;
+  }
+  svg += '</svg>';
+  return svg;
+}
+
+function renderResults() {
+  const r = S.results;
+  const series = resultsSeriesKeys(r.runs);
+  const points = resultsPoints(r.runs, r.modelFilter);
+  const models = [...new Set(points.map(p => p.model))].sort();
+  const ths = notebookThresholds();
+  const threshold = ths.length ? ths[0].threshold : null;
+  let html = masthead();
+
+  if (!(r.runs || []).length) {
+    html += `<div class="results-empty"><div class="glyph">❧</div>
+      <p>No trials on the ledger yet — run an eval cell, then return to the bench.</p>
+      <p class="hint">Scores arrive from <span class="mono">_metrics/bench-log.jsonl</span>.</p></div>`;
+    $('#main').innerHTML = html;
+    return;
+  }
+
+  html += `<div class="results-bar">
+    <div class="hint">${S.nb ? esc(S.nb) : 'all notebooks'} · ${points.length} candidate×run point${points.length === 1 ? '' : 's'}</div>
+    <div class="filters">
+      <label>model <select onchange="setResultsFilter(this.value)">
+        <option value="">All models</option>
+        ${(r.models || []).map(m => `<option value="${esc(m)}" ${r.modelFilter === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
+      </select></label>
+      <label>X <select onchange="setResultsAxis('x', this.value)">
+        ${series.map(k => `<option value="${esc(k)}" ${r.xKey === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}
+      </select></label>
+      <label>Y <select onchange="setResultsAxis('y', this.value)">
+        ${series.map(k => `<option value="${esc(k)}" ${r.yKey === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}
+      </select></label>
+    </div>
+  </div>`;
+
+  const cards = resultsStats(points);
+  if (cards.length) {
+    html += '<div class="stat-grid">' + cards.map(c => `
+      <div class="stat-card">
+        <div class="label">${esc(c.label)}</div>
+        <div class="value">${esc(c.value)}</div>
+        ${c.delta ? `<span class="delta ${c.delta.dir || ''}">${esc(c.delta.text)}</span>` : ''}
+        ${c.note ? `<div class="note">${esc(c.note)}</div>` : ''}
+      </div>`).join('') + '</div>';
+  }
+
+  const title = (r.xKey && r.yKey) ? `${r.xKey} vs ${r.yKey}` : 'Scatter';
+  html += `<div class="scatter-wrap"><div class="scatter-head">
+    <h2>${esc(title)}</h2>
+    <div class="scatter-legend">${models.map(m =>
+      `<span style="color:${modelColor(m, models)}"><i></i>${esc(m)}</span>`).join('')}</div>
+  </div>${renderScatterSvg(points, r.xKey, r.yKey, models, threshold)}</div>`;
+
+  $('#main').innerHTML = html;
+}
+
+function setResultsFilter(value) {
+  S.results.modelFilter = value || '';
+  renderResults();
+}
+function setResultsAxis(which, value) {
+  if (which === 'x') S.results.xKey = value;
+  if (which === 'y') S.results.yKey = value;
+  renderResults();
+}
+
+// ---------------------------------------------------------------------------
+// journal — every eval run, catalogued
+// ---------------------------------------------------------------------------
+async function loadJournal() {
+  if (!S.ws) {
+    $('#main').innerHTML = masthead() + '<div class="journal-empty"><div class="glyph">❧</div><p>Pick a workspace to open the journal.</p></div>';
+    return;
+  }
+  try {
+    const d = await api('/api/journal?ws=' + encodeURIComponent(S.ws));
+    S.journal.runs = d.runs || [];
+    S.journal.notebooks = d.notebooks || [];
+    S.journal.models = d.models || [];
+    // keep detail only if that run is still present
+    if (S.journal.openId && !S.journal.runs.some(r => r.run_id === S.journal.openId)) {
+      S.journal.openId = null; S.journal.detail = null;
+    }
+    renderJournal();
+  } catch (e) {
+    $('#main').innerHTML = masthead() + `<div class="journal-empty"><div class="glyph">❧</div>
+      <p>Could not read the journal: ${esc(e.message || e)}</p></div>`;
+  }
+}
+
+function filteredJournalRuns() {
+  const j = S.journal;
+  return (j.runs || []).filter(r => {
+    if (j.nbFilter && r.notebook !== j.nbFilter) return false;
+    if (j.modelFilter && !(r.models || []).includes(j.modelFilter)) return false;
+    return true;
+  });
+}
+
+function journalWindowLabel(runs) {
+  if (!runs.length) return 'no runs match';
+  const dates = runs.map(r => r.date).filter(Boolean).sort();
+  if (!dates.length) return `${runs.length} run${runs.length === 1 ? '' : 's'}`;
+  const newest = new Date(dates[dates.length - 1] + 'T00:00:00Z');
+  const oldest = new Date(dates[0] + 'T00:00:00Z');
+  const spanDays = Math.max(1, Math.round((newest - oldest) / 86400000) + 1);
+  const window = spanDays <= 7 ? 'last 7 days' : `last ${spanDays} days`;
+  return `${runs.length} run${runs.length === 1 ? '' : 's'} · ${window}`;
+}
+
+function scoreBand(score) {
+  if (score == null || Number.isNaN(Number(score))) return { pct: 0, band: 'lo', label: '—' };
+  const n = Number(score);
+  // judge means are often 1–5; metric means often 0–1
+  const pct = Math.max(0, Math.min(100, Math.round((n <= 1 ? n : n / 5) * 100)));
+  const band = pct >= 70 ? 'hi' : pct >= 40 ? 'mid' : 'lo';
+  return { pct, band, label: String(n) };
+}
+
+function formatRunTime(run) {
+  // prefer ISO date from the log; decorate with stamp from run-YYYYMMDDHHMMSS
+  const m = String(run.run_id || '').match(/^run-(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
+  if (m) {
+    const iso = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00`;
+    const d = new Date(iso);
+    if (!Number.isNaN(d.getTime())) {
+      const today = new Date();
+      const sameDay = d.toDateString() === today.toDateString();
+      const hhmm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (sameDay) return hhmm + ' today';
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' + hhmm;
+    }
+  }
+  return run.date || '—';
+}
+
+function renderJournal() {
+  const j = S.journal;
+  const runs = filteredJournalRuns();
+  let html = masthead();
+  html += `<div class="journal-bar">
+    <div class="journal-count"><b>${esc(journalWindowLabel(runs))}</b></div>
+    <div class="journal-filters">
+      <select id="j-nb" onchange="setJournalFilter('nb', this.value)" title="filter by notebook">
+        <option value="">All notebooks</option>
+        ${(j.notebooks || []).map(n => `<option value="${esc(n)}" ${j.nbFilter === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}
+      </select>
+      <select id="j-model" onchange="setJournalFilter('model', this.value)" title="filter by model">
+        <option value="">All models</option>
+        ${(j.models || []).map(m => `<option value="${esc(m)}" ${j.modelFilter === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
+      </select>
+    </div>
+  </div>`;
+
+  if (!(j.runs || []).length) {
+    html += `<div class="journal-empty"><div class="glyph">❧</div>
+      <p>The journal is blank — no eval runs recorded yet.</p>
+      <p class="hint">Run an eval cell from the field notebook; every trial lands here, catalogued newest first.</p>
+    </div>`;
+    $('#main').innerHTML = html;
+    return;
+  }
+  if (!runs.length) {
+    html += `<div class="journal-empty"><div class="glyph">❧</div>
+      <p>No runs match these filters.</p>
+      <p class="hint">Clear a chip, or run another eval — the ledger only shows what you ask for.</p>
+    </div>`;
+    $('#main').innerHTML = html;
+    return;
+  }
+
+  html += `<table class="journal-table"><thead><tr>
+    <th>Run id</th><th>Status</th><th>Notebook</th><th>Model</th><th>Score</th><th>Items</th><th>Time</th>
+  </tr></thead><tbody>`;
+  runs.forEach((r, i) => {
+    const sc = scoreBand(r.score);
+    const status = r.status || 'passed';
+    const open = j.openId === r.run_id;
+    const clsRow = ['run-row', i === 0 && !j.nbFilter && !j.modelFilter ? 'newest' : '', open ? 'open' : ''].filter(Boolean).join(' ');
+    html += `<tr class="${clsRow}" onclick="openJournalRun(event,'${esc(r.notebook)}','${esc(r.run_id)}')">
+      <td class="jid">${esc(r.run_id)}</td>
+      <td><span class="pill ${cls(status)}">${esc(status.charAt(0).toUpperCase() + status.slice(1))}</span></td>
+      <td class="j-pipe"><span class="name">${esc(r.notebook)}</span>
+        <span class="meta">eval · ${esc(r.cell || '—')} · ${esc(r.date || '')}</span></td>
+      <td class="j-model">${esc((r.models || []).join(', ') || '—')}</td>
+      <td class="score-cell"><div class="score-bar"><i class="${sc.band}" style="width:${sc.pct}%"></i></div>
+        <span class="score-val">${esc(sc.label)}</span></td>
+      <td class="j-num">${esc(r.n)}</td>
+      <td class="j-time">${esc(formatRunTime(r))}</td>
+    </tr>`;
+    if (open) {
+      html += `<tr class="detail-row"><td colspan="7">${renderJournalDetail(j.detail)}</td></tr>`;
+    }
+  });
+  html += '</tbody></table>';
+  $('#main').innerHTML = html;
+}
+
+function renderJournalDetail(detail) {
+  if (!detail) return `<div class="journal-detail"><span class="spin">◌</span> loading run…</div>`;
+  if (detail.error) return `<div class="journal-detail"><div class="err">${esc(detail.error)}</div></div>`;
+  // reuse the eval output renderer — shape matches a live eval cell output
+  const fakeOut = {
+    run_id: detail.run_id,
+    rows: detail.rows,
+    metrics: detail.metrics,
+    results_path: detail.results_path,
+    summary: detail.summary,
+    results: detail.results,
+  };
+  return `<div class="journal-detail">
+    <div class="detail-head">
+      <button class="back" onclick="event.stopPropagation(); closeJournalRun()">← close</button>
+      <span class="jid">${esc(detail.run_id)}</span>
+      <span class="kv">${esc(detail.notebook)} · ${esc(detail.cell || '')}</span>
+    </div>
+    ${outEval(fakeOut)}
+  </div>`;
+}
+
+function setJournalFilter(kind, value) {
+  if (kind === 'nb') S.journal.nbFilter = value || '';
+  if (kind === 'model') S.journal.modelFilter = value || '';
+  // closing detail when filters hide it is handled by filtered list
+  renderJournal();
+}
+
+async function openJournalRun(ev, nb, runId) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  if (S.journal.openId === runId) { closeJournalRun(); return; }
+  S.journal.openId = runId;
+  S.journal.detail = null;
+  renderJournal();
+  try {
+    const d = await api('/api/journal/run?ws=' + encodeURIComponent(S.ws)
+      + '&nb=' + encodeURIComponent(nb) + '&run=' + encodeURIComponent(runId));
+    if (S.journal.openId !== runId) return;
+    S.journal.detail = d;
+    renderJournal();
+  } catch (e) {
+    if (S.journal.openId !== runId) return;
+    S.journal.detail = { error: String(e.message || e) };
+    renderJournal();
+  }
+}
+
+function closeJournalRun() {
+  S.journal.openId = null;
+  S.journal.detail = null;
+  renderJournal();
+}
+
 function render() {
   const nb = S.notebook;
-  if (!nb) return;
-  const typed = nb.cells.filter(c => c.type !== 'note');
+  if (!nb && S.view === 'notebook') return;
   const runAllBtn = $('#run-all');
   runAllBtn.innerHTML = S.running.has('__all__') ? '<span class="spin">◌</span> running' : '▶ run all';
 
-  let html = '';
-  // graph strip: topo order with stale/error state — the notebook's shape
+  if (S.view === 'journal') { renderJournal(); return; }
+  if (S.view === 'results') { renderResults(); return; }
+  if (S.view !== 'notebook') { $('#main').innerHTML = plate(S.view); return; }
+  if (!nb) return;
+
+  const typed = nb.cells.filter(c => c.type !== 'note');
+  let html = masthead();
+
+  html += `<div class="nb-tools"><span class="kicker" style="font:600 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--text-3)">add cell</span>` +
+    S.boot.cell_types.map(t => `<button class="quiet" onclick="addCell('${t}')">+ ${t}</button>`).join('') + '</div>';
+
+  // graph strip: topo order with fresh/stale/error state — the notebook's shape
   if (typed.length) {
     html += '<div class="graph">' + nb.graph.order
       .filter(id => typed.some(c => c.id === id))
       .map((id, i) => {
         const st = nb.state[id] || {};
-        const cls = st.error ? 'err' : st.stale ? 'stale' : '';
+        const c = st.error ? 'err' : st.stale ? 'stale' : st.ran_at ? 'fresh' : '';
         return (i ? '<span class="arrow">→</span>' : '') +
-          `<span class="gcell ${cls}" onclick="document.getElementById('cell-${esc(id)}').scrollIntoView({behavior:'smooth',block:'center'})">${esc(id)}</span>`;
+          `<span class="gcell ${c}" onclick="document.getElementById('cell-${esc(id)}').scrollIntoView({behavior:'smooth',block:'center'})">${esc(id)}</span>`;
       }).join('') + '</div>';
     if (nb.graph.cycle.length) html += `<div class="out"><span class="err">dependency cycle: ${esc(nb.graph.cycle.join(', '))}</span></div>`;
   }
 
   for (const cell of nb.cells) html += renderCell(cell);
 
-  html += `<div class="addbar"><span>add cell:</span>` +
-    S.boot.cell_types.map(t => `<button class="quiet" onclick="addCell('${t}')">+ ${t}</button>`).join('') + '</div>';
-
   $('#main').innerHTML = html;
 
-  // wire keyboard shortcuts for the first visible annotation panel
+  // number-key shortcuts for annotation. Scoped (review finding): they fire
+  // for the panel that has focus, or — the common case — when exactly one
+  // annotate panel is on the page. Two visible panels with neither focused →
+  // no ambient firing; click into one first.
   document.onkeydown = e => {
     if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
-    const btn = document.querySelector('.anno-buttons button[data-key="' + e.key + '"]');
+    const panels = [...document.querySelectorAll('.anno-item')];
+    if (!panels.length) return;
+    const focused = panels.find(p => p.contains(document.activeElement));
+    const panel = focused || (panels.length === 1 ? panels[0] : null);
+    if (!panel) return;
+    const btn = panel.querySelector('.anno-buttons button[data-key="' + e.key + '"]');
     if (btn) { btn.click(); e.preventDefault(); }
   };
 }
@@ -386,7 +1194,7 @@ function renderCell(cell) {
 
   return `<div class="cell ${editing ? 'editing' : ''}" id="cell-${esc(cell.id)}">
     <div class="cell-head">
-      <span class="chip ${esc(cell.type)}">${esc(cell.type)}</span>
+      <span class="chip ${cls(cell.type)}">${esc(cell.type)}</span>
       <span class="cid">${esc(cell.id)}</span>
       <span class="status-dot ${dot}" title="${dotTitle}"></span>
       <span class="when">${st.ran_at ? ago(st.ran_at) : ''}</span>
@@ -399,7 +1207,7 @@ function renderCell(cell) {
       <textarea id="ed-${esc(cell.id)}" rows="${Math.min(18, (cell.raw || '').split('\n').length + 2)}">${esc(cell.raw || '')}</textarea>
       <div class="bar"><button class="primary" onclick="saveCell('${esc(cell.id)}')">save</button>
       <button onclick="toggleEdit('${esc(cell.id)}')">cancel</button>
-      ${cell.error ? `<span class="err" style="color:var(--red);font-size:12.5px">${esc(cell.error)}</span>` : ''}</div>
+      ${cell.error ? `<span class="err" style="color:var(--red);font-size:12px">${esc(cell.error)}</span>` : ''}</div>
     </div>
     <div class="out">${renderOutput(cell, st)}</div>
   </div>`;
@@ -467,7 +1275,7 @@ function usage(u, provider, model) {
 function outJudge(o) {
   const s = o.sample || {};
   return `<div class="kv">kind <b>${esc(o.kind)}</b>${o.provider ? ` · <b>${esc(o.provider)}${o.model ? '/' + esc(o.model) : ''}</b>` : ''} · dimensions: <b>${esc((o.dimensions || []).join(', '))}</b></div>` +
-    `<div class="kv">sample judgment: <span class="verdict ${esc(s.verdict)}">${esc(s.verdict || '?')}</span> overall <b>${esc(s.overall)}</b>/${esc(s.scale || 5)}${s.rationale ? ` — ${esc(clip(s.rationale, 160))}` : ''}</div>`;
+    `<div class="kv">sample judgment: <span class="verdict ${cls(s.verdict)}">${esc(s.verdict || '?')}</span> overall <b>${esc(s.overall)}</b>/${esc(s.scale || 5)}${s.rationale ? ` — ${esc(clip(s.rationale, 160))}` : ''}</div>`;
 }
 
 function outGolden(o) {
@@ -499,13 +1307,13 @@ function outEval(o) {
   html += '</table></div>';
   html += `<div class="kv">run <b>${esc(o.run_id)}</b> · ${o.rows} rows · results at <b>${esc(o.results_path)}</b></div>`;
   // per-row detail, collapsed
-  html += `<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">per-row results (${(o.results || []).length})</summary>`;
+  html += `<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--text-3);font-size:12.5px">per-row results (${(o.results || []).length})</summary>`;
   html += `<div class="scroll"><table><tr><th>item</th><th>input</th><th>output</th><th>judge</th><th>metrics</th></tr>` +
     (o.results || []).map(r => {
       const j = firstJudgment(r.judgments);
       return `<tr><td>${esc(r.item_id)}</td><td>${esc(clip(r.row && (r.row.input != null ? r.row.input : r.row), 90))}</td>
         <td>${r.error ? `<span style="color:var(--red)">${esc(clip(r.error, 90))}</span>` : esc(clip(r.output, 110))}</td>
-        <td>${j ? `<span class="verdict ${esc(j.verdict)}">${esc(j.verdict)}</span> ${esc(j.overall)}` : '—'}</td>
+        <td>${j ? `<span class="verdict ${cls(j.verdict)}">${esc(j.verdict)}</span> ${esc(j.overall)}` : '—'}</td>
         <td class="num">${esc(clip(JSON.stringify(r.metrics), 60))}</td></tr>`;
     }).join('') + '</table></div></details>';
   return html;
@@ -528,7 +1336,7 @@ function outAnnotate(cell, o) {
 
   const it = queue[0];
   const set = (cell.config || {}).golden;
-  html += `<div class="anno-item">`;
+  html += `<div class="anno-item" tabindex="0">`;
   if (isGolden) {
     html += `<div class="q">draft golden row (${queue.length} awaiting review)</div>` +
       `<pre class="block">${esc(JSON.stringify(it.row, null, 2))}</pre>` +
@@ -541,7 +1349,7 @@ function outAnnotate(cell, o) {
     html += `<div class="q">${esc(it.item_id)} · candidate <b>${esc(it.candidate || '')}</b> (${queue.length} left)</div>` +
       `<div class="kv">input:</div><pre class="block">${esc(clip(it.row && (it.row.input != null ? it.row.input : JSON.stringify(it.row)), 500))}</pre>` +
       `<div class="kv">output:</div><pre class="block">${it.error ? esc(it.error) : esc(clip(it.output, 900))}</pre>` +
-      (j ? `<div class="kv">judge says: <span class="verdict ${esc(j.verdict)}">${esc(j.verdict)}</span> ${esc(j.overall)} — label blind, then compare</div>` : '');
+      (j ? `<div class="kv">judge says: <span class="verdict ${cls(j.verdict)}">${esc(j.verdict)}</span> ${esc(j.overall)} — label blind, then compare</div>` : '');
     const labels = o.labels || (o.scale ? Array.from({ length: o.scale }, (_, i) => String(i + 1)) : []);
     html += `<div class="anno-buttons">` + labels.map((l, i) =>
       `<button ${i === 0 ? 'class="primary"' : ''} data-key="${i + 1}" onclick="annotateItem('${esc(cell.id)}','${esc(it.item_id)}','${esc(l)}')">${esc(l)}<span class="key">${i + 1}</span></button>`
@@ -552,7 +1360,9 @@ function outAnnotate(cell, o) {
 }
 
 // a deliberately tiny markdown: headings, paragraphs, inline code, bold — the
-// note cells are prose, not documents; anything richer belongs in docs/
+// note cells are prose, not documents; anything richer belongs in docs/.
+// Inline markup is built token-by-token with ONE escape pass per text piece,
+// so reordering can never reopen an XSS hole (review finding).
 function mdLite(text) {
   const blocks = String(text || '').split(/\n\s*\n/);
   return blocks.map(b => {
@@ -563,9 +1373,12 @@ function mdLite(text) {
     return `<p>${inline(t)}</p>`;
   }).join('');
   function inline(s) {
-    return esc(s)
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    // split into `code` / **bold** / plain tokens; escape each piece exactly once
+    return String(s).split(/(`[^`]+`|\*\*[^*]+\*\*)/g).map(part => {
+      if (/^`[^`]+`$/.test(part)) return '<code>' + esc(part.slice(1, -1)) + '</code>';
+      if (/^\*\*[^*]+\*\*$/.test(part)) return '<b>' + esc(part.slice(2, -2)) + '</b>';
+      return esc(part);
+    }).join('');
   }
 }
 

@@ -27,11 +27,129 @@ function arg(name, fallback) {
 const PORT = parseInt(arg('port', '4460'), 10);
 const ROOT = path.resolve(arg('root', process.cwd()));
 
-const { isDir, safeRead } = require('./lib/fsutil');
+const { isDir, safeRead, safePath } = require('./lib/fsutil');
 const { createBench } = require('./lib/engine');
 const { createProviders } = require('./lib/providers');
 const { scaffoldDemo } = require('./lib/demo');
 const { parseNotebook, serializeNotebook, slugId, CELL_TYPES } = require('./lib/notebook');
+
+// ---------- journal (read-only run history from _metrics + eval artifacts) ----------
+
+function readJsonlFile(file) {
+  const out = [];
+  for (const line of (safeRead(file) || '').split('\n')) {
+    if (!line.trim()) continue;
+    try { out.push(JSON.parse(line)); } catch { /* skip bad line */ }
+  }
+  return out;
+}
+
+function readJsonFile(file) {
+  const t = safeRead(file);
+  if (t == null) return null;
+  try { return JSON.parse(t); } catch { return null; }
+}
+
+// Group bench-log rows (one per candidate) into newest-first run cards.
+function journalRuns(wsDir) {
+  const rows = readJsonlFile(path.join(wsDir, '_metrics', 'bench-log.jsonl'));
+  const byRun = new Map();
+  for (const row of rows) {
+    const id = row && row.run_id;
+    if (!id) continue;
+    if (!byRun.has(id)) byRun.set(id, []);
+    byRun.get(id).push(row);
+  }
+  const runs = [];
+  for (const [run_id, cands] of byRun) {
+    const head = cands[0];
+    const n = Math.max(...cands.map(c => Number(c.n) || 0), 0);
+    const errors = cands.reduce((s, c) => s + (Number(c.errors) || 0), 0);
+    const totalSlots = cands.reduce((s, c) => s + (Number(c.n) || 0), 0);
+    let status = 'passed';
+    if (totalSlots > 0 && errors >= totalSlots) status = 'failed';
+    else if (errors > 0) status = 'partial';
+    const winner = cands.find(c => c.winner) || cands[0];
+    const score = winner && winner.judge_overall_mean != null
+      ? winner.judge_overall_mean
+      : firstMetric(winner && winner.metrics);
+    const models = [...new Set(cands.map(c => modelLabel(c)).filter(Boolean))];
+    runs.push({
+      run_id,
+      notebook: head.notebook,
+      cell: head.cell,
+      date: head.date || null,
+      status,
+      n,
+      errors,
+      score,
+      models,
+      candidates: cands.map(c => ({
+        candidate: c.candidate,
+        provider: c.provider,
+        model: c.model,
+        n: c.n,
+        errors: c.errors,
+        judge_overall_mean: c.judge_overall_mean,
+        metrics: c.metrics,
+        winner: Boolean(c.winner),
+      })),
+      results_path: `_bench/runs/${slugId(head.notebook)}/evals/${slugId(run_id)}/results.jsonl`,
+    });
+  }
+  // newest-first: run id stamp is chronological; fall back to date string
+  runs.sort((a, b) => String(b.run_id).localeCompare(String(a.run_id)));
+  const notebookSet = new Set();
+  const modelSet = new Set();
+  for (const r of runs) {
+    if (r.notebook) notebookSet.add(r.notebook);
+    for (const m of r.models) modelSet.add(m);
+  }
+  return {
+    runs,
+    notebooks: [...notebookSet].sort(),
+    models: [...modelSet].sort(),
+  };
+}
+
+function modelLabel(c) {
+  if (!c) return '';
+  if (c.provider || c.model) return [c.provider, c.model].filter(Boolean).join('/');
+  return c.candidate || '';
+}
+
+function firstMetric(metrics) {
+  if (!metrics || typeof metrics !== 'object') return null;
+  for (const k of Object.keys(metrics)) {
+    if (typeof metrics[k] === 'number') return metrics[k];
+  }
+  return null;
+}
+
+function journalRunDetail(wsDir, nb, runId) {
+  const nbSlug = slugId(nb);
+  const runSlug = slugId(runId);
+  if (!nbSlug || !runSlug) throw new Error('invalid notebook or run id');
+  const runDir = safePath(path.join(wsDir, '_bench', 'runs', nbSlug, 'evals'), runSlug);
+  if (!runDir || !isDir(runDir)) throw new Error(`run not found: ${runId}`);
+  const summary = readJsonFile(path.join(runDir, 'summary.json'));
+  const results = readJsonlFile(path.join(runDir, 'results.jsonl'));
+  return {
+    run_id: runId,
+    notebook: nb,
+    cell: summary && summary.cell,
+    created: summary && summary.created,
+    data: summary && summary.data,
+    rows: summary && summary.rows,
+    candidates: summary && summary.candidates,
+    metrics: (summary && summary.metrics) || [],
+    judges: (summary && summary.judges) || [],
+    summary: summary && summary.summary,
+    results,
+    results_path: `_bench/runs/${nbSlug}/evals/${runSlug}/results.jsonl`,
+    summary_path: `_bench/runs/${nbSlug}/evals/${runSlug}/summary.json`,
+  };
+}
 
 const providers = createProviders();
 
@@ -121,12 +239,12 @@ const server = http.createServer((req, res) => {
     } else if (u.pathname === '/favicon.ico') {
       res.writeHead(204); res.end();
     } else if (u.pathname === '/api/state') {
-      // one bootstrap read: workspaces, provider availability, cell templates
+      // one bootstrap read: workspaces, provider availability, cell types.
+      // (Cell templates stay server-side — only cell-add reads them.)
       json(res, 200, {
         workspaces: listWorkspaces().map(w => ({ name: w.name, example: w.example })),
         providers: providers.status(),
         cell_types: CELL_TYPES,
-        templates: CELL_TEMPLATES,
       });
     } else if (u.pathname === '/api/notebooks') {
       const bench = benchFor(q('ws'));
@@ -137,11 +255,22 @@ const server = http.createServer((req, res) => {
       const bench = benchFor(q('ws'));
       const set = q('set');
       json(res, 200, set ? { set, rows: bench.goldenRows(set) } : { sets: bench.listGoldenSets() });
+    } else if (u.pathname === '/api/journal') {
+      // catalog of eval runs from _metrics/bench-log.jsonl (read-only)
+      json(res, 200, journalRuns(workspace(q('ws')).dir));
+    } else if (u.pathname === '/api/journal/run') {
+      // one run's summary + per-row results.jsonl
+      json(res, 200, journalRunDetail(workspace(q('ws')).dir, q('nb'), q('run')));
+    } else if (u.pathname.startsWith('/api/')) {
+      // the API namespace always speaks JSON — the client parses every response
+      json(res, 404, { error: `not found: ${u.pathname}` });
     } else {
       res.writeHead(404); res.end('not found');
     }
   } catch (e) {
-    json(res, 500, { error: String(e && e.message || e) });
+    const msg = String(e && e.message || e);
+    // missing resources (unknown workspace, absent notebook) are 404s, not 500s
+    json(res, /unknown workspace|not found/.test(msg) ? 404 : 500, { error: msg });
   }
 });
 

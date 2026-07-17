@@ -1,0 +1,8 @@
+# secrets — never committed
+.env
+.env.*
+!.env.example
+
+# noise
+.DS_Store
+node_modules/

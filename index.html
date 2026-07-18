@@ -23,6 +23,7 @@
     --red: #9a3a2f; --red-dim: rgba(154, 58, 47, 0.12);
     --node-bg: #ffffff; --node-border: rgba(30, 30, 30, 0.10);
     --on-accent: #f8f6f0;
+    --p-bedrock: #3d6fb8; --p-anthropic: #d97757; --p-gemini: #4285f4;
     --radius: 10px;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -39,6 +40,7 @@
     --red: #e07564; --red-dim: rgba(224, 117, 100, 0.16);
     --node-bg: #221c13; --node-border: rgba(240, 220, 180, 0.12);
     --on-accent: #1a150d;
+    --p-bedrock: #7fa7de; --p-anthropic: #e08a63; --p-gemini: #8ab4f8;
   }
 
   * { box-sizing: border-box; }
@@ -53,6 +55,9 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+  /* the hidden <symbol> sheet every cell-type icon is <use>d from */
+  .icon-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 
   /* ---------- the rail: app mark + four views + theme ---------- */
   .rail {
@@ -97,6 +102,17 @@
   .providers { margin-left: auto; display: flex; gap: 10px; font-size: 12px; color: var(--text-3); }
   .providers .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
   .dot.ok { background: var(--accent); } .dot.no { background: var(--border-2); }
+  /* provider brand hues (available only; unavailable stays muted).
+     openai rides --text-1 so black flips to cream in dark mode. */
+  .dot.ok.p-openai { background: var(--text-1); }
+  .dot.ok.p-bedrock { background: var(--p-bedrock); }
+  .dot.ok.p-anthropic { background: var(--p-anthropic); }
+  .dot.ok.p-gemini { background: var(--p-gemini); }
+  /* the built-in fixture provider displays as "offline" — a hollow accent
+     ring, divided from the real-provider dots. Display-only relabel: the
+     provider's internal name (and `provider: fixture` configs) stay fixture. */
+  .dot.offline { background: transparent; box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .providers .prov-sep { width: 1px; height: 12px; background: var(--border-2); align-self: center; }
 
   main { width: 100%; max-width: 960px; margin: 0 auto; padding: 6px 24px 120px; }
 
@@ -111,6 +127,21 @@
     letter-spacing: -0.01em; margin: 4px 0 2px;
   }
   .masthead .sub { font-style: italic; color: var(--text-2); font-size: 13.5px; }
+  /* the goal line: pencil stays subtle until the masthead is hovered */
+  .masthead .goal-edit {
+    border: none; background: none; color: var(--text-3); padding: 0 4px;
+    font-size: 12px; cursor: pointer; opacity: 0; vertical-align: baseline;
+  }
+  .masthead:hover .goal-edit, .masthead .goal-edit:focus { opacity: 1; }
+  .masthead .goal-edit:hover { color: var(--text-1); }
+  .masthead .goal-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+  .masthead .goal-form input { min-width: min(420px, 70vw); font-size: 13px; }
+
+  /* the workspace picker demotes to a compact secondary control (tl mode) */
+  select.ws-compact {
+    font-size: 11.5px; color: var(--text-2); background: transparent;
+    border-color: var(--border); padding: 3px 6px; max-width: 150px;
+  }
 
   /* notebook toolbar under the masthead */
   .nb-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 12px 0 16px; }
@@ -136,6 +167,159 @@
   .graph .gcell.stale { border-color: var(--amber); background: var(--amber-dim); color: var(--amber); }
   .graph .gcell.err { border-color: var(--red); background: var(--red-dim); color: var(--red); }
   .graph .arrow { color: var(--text-3); font-size: 11px; }
+
+  /* ---------- flow canvas — specimen plate over the notebook graph ---------- */
+  .flow-shell { width: 100%; max-width: 1180px; margin: 0 auto; }
+  .flow-board {
+    display: grid; grid-template-columns: 46px minmax(520px, 1fr) 300px; gap: 14px;
+    min-height: 620px; padding-top: 14px;
+  }
+  .flow-board.no-insp { grid-template-columns: 46px 1fr; }
+  /* the node palette: one icon per cell type down the canvas's left edge —
+     the same <symbol>s the node chips use, so vocabulary can never drift */
+  .flow-palette {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 7px 0 8px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); align-self: start; position: sticky; top: 56px;
+    z-index: 10; /* tooltips overlay the stage, which paints later in the DOM */
+    box-shadow: 0 1px 2px rgba(30, 30, 30, 0.04);
+  }
+  .flow-palette .pal-head {
+    font: 700 9px var(--sans); letter-spacing: .16em; text-transform: uppercase;
+    color: var(--text-3); padding-bottom: 3px;
+  }
+  .pal-btn {
+    position: relative; width: 32px; height: 32px; border-radius: 8px;
+    border: 1px solid transparent; background: none; color: var(--text-2);
+    display: grid; place-items: center; padding: 0; cursor: pointer;
+  }
+  .pal-btn:hover, .pal-btn:focus-visible { color: var(--accent); background: var(--surface-2); border-color: var(--border); }
+  .pal-btn::after {
+    content: '+ ' attr(data-type); position: absolute; left: calc(100% + 10px); top: 50%;
+    transform: translateY(-50%); background: var(--text-1); color: var(--bg);
+    font: 600 11px var(--sans); padding: 3px 9px; border-radius: 6px; white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 30;
+  }
+  .pal-btn:hover::after, .pal-btn:focus-visible::after { opacity: 1; }
+  .type-icon { width: 18px; height: 18px; display: block; }
+  .flow-node .node-icon .type-icon { width: 15px; height: 15px; }
+  .flow-stage {
+    position: relative; min-height: 560px; overflow: auto; border: 1px solid var(--border);
+    border-radius: var(--radius); background-color: var(--bg);
+    background-image: radial-gradient(circle, rgba(30, 30, 30, 0.10) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  :root.dark .flow-stage {
+    background-image: radial-gradient(circle, rgba(240, 220, 180, 0.12) 1px, transparent 1px);
+  }
+  .flow-plane { position: relative; min-width: 780px; min-height: 540px; }
+  .flow-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .flow-edge { fill: none; stroke: var(--border-2); stroke-width: 1.4; }
+  .flow-edge.ghost { stroke: var(--accent); stroke-width: 1.8; stroke-dasharray: 6 5; opacity: .8; }
+  .flow-edge.hot { stroke: var(--accent); stroke-width: 2; }
+  .flow-edge.chain { stroke: var(--accent); stroke-width: 1.8; stroke-dasharray: 6 4; opacity: .9; }
+  .flow-edge.chain.hot { stroke-dasharray: none; stroke-width: 2.2; }
+  .flow-node {
+    position: absolute; width: 190px; min-height: 82px; border: 1px solid var(--node-border);
+    border-radius: 8px; background: var(--node-bg); padding: 11px 12px; cursor: grab;
+    user-select: none; box-shadow: 0 1px 2px rgba(30,30,30,.04), 0 12px 26px -22px rgba(30,30,30,.55);
+  }
+  .flow-node:active { cursor: grabbing; }
+  .flow-node:hover, .flow-node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow), 0 12px 28px -20px rgba(47,91,52,.55); }
+  .flow-node .node-top { display: flex; align-items: center; gap: 8px; }
+  .flow-node .node-icon {
+    width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    background: var(--surface-2); color: var(--accent); font-size: 14px; flex: none;
+  }
+  .flow-node .node-id { font-family: var(--mono); font-size: 12.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .flow-node .node-sub { color: var(--text-3); font-size: 11.5px; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .flow-node .node-dot { margin-left: auto; width: 10px; height: 10px; border-radius: 50%; background: var(--border-2); flex: none; }
+  .insp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .insp-head h2 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .insp-close { font-size: 16px; line-height: 1; flex: none; }
+  .flow-inspector .node-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border-2); flex: none; }
+  .flow-inspector .node-dot.running, .flow-inspector .node-dot.fresh { background: var(--green); }
+  .flow-inspector .node-dot.stale { background: var(--amber); }
+  .flow-inspector .node-dot.error { background: var(--red); }
+  /* a fresh control node is grey "unconfigured", never red — explicit so the
+     state reads as deliberate (same quiet grey as never-ran) */
+  .flow-node .node-dot.unconfigured, .flow-inspector .node-dot.unconfigured { background: var(--border-2); }
+  .flow-node .node-dot.running { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  .flow-node .node-dot.fresh { background: var(--green); }
+  .flow-node .node-dot.stale { background: var(--amber); }
+  .flow-node .node-dot.error { background: var(--red); }
+  .flow-node .node-dot.note { background: var(--text-3); opacity: .5; }
+  .flow-connect-port {
+    position: absolute; right: -7px; top: 50%; transform: translateY(-50%);
+    width: 14px; height: 14px; padding: 0; border-radius: 50%;
+    border: 2px solid var(--node-bg); background: var(--accent); color: transparent;
+    opacity: 0; cursor: crosshair; transition: opacity .12s, transform .12s;
+  }
+  .flow-node:hover .flow-connect-port, .flow-node.selected .flow-connect-port,
+  .flow-connect-port:focus-visible { opacity: 1; }
+  .flow-connect-port:hover, .flow-connect-port:focus-visible { transform: translateY(-50%) scale(1.18); border-color: var(--surface); }
+  .flow-node.connect-target { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .flow-relayout {
+    position: absolute; right: 14px; bottom: 14px; z-index: 4; width: 32px; height: 32px;
+    display: grid; place-items: center; padding: 0; border-radius: 8px;
+    background: var(--surface); color: var(--text-2); box-shadow: 0 4px 14px -10px rgba(30,30,30,.7);
+  }
+  .flow-relayout:hover, .flow-relayout:focus-visible { color: var(--accent); }
+  .flow-relayout svg { width: 17px; height: 17px; }
+  @keyframes pulse { 50% { transform: scale(1.35); opacity: .55; } }
+  /* collapsed to a pill so it never covers the deepest node (which the
+     left-to-right layout always parks in this corner); hover/focus expands */
+  .flow-note-card {
+    position: absolute; right: 18px; top: 18px; border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 92%, transparent); border-radius: 999px;
+    padding: 4px 12px; color: var(--text-2); font-size: 12.5px; box-shadow: 0 10px 30px -26px rgba(30,30,30,.7);
+  }
+  .flow-note-card .body { display: none; }
+  .flow-note-card:hover, .flow-note-card:focus-within {
+    width: 230px; border-radius: 8px; padding: 12px 14px; z-index: 5;
+  }
+  .flow-note-card:hover .body, .flow-note-card:focus-within .body { display: block; }
+  .flow-note-card:hover .label, .flow-note-card:focus-within .label { margin-bottom: 5px; }
+  .flow-note-card .label { font: 700 10px var(--sans); letter-spacing: .13em; text-transform: uppercase; color: var(--text-3); margin-bottom: 0; }
+  .flow-inspector, .run-log {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; min-width: 0;
+  }
+  .flow-inspector h2 { font-family: var(--display); font-size: 20px; margin: 0 0 2px; }
+  .flow-inspector .meta { color: var(--text-3); font-size: 12px; margin-bottom: 12px; }
+  .flow-inspector .status-line { display: flex; align-items: center; gap: 7px; color: var(--text-2); margin: 8px 0 10px; }
+  .flow-inspector pre { max-height: 220px; overflow: auto; }
+  .flow-inspector textarea {
+    width: 100%; min-height: 160px; font: 12px/1.5 var(--mono); padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+    color: var(--text); resize: vertical; box-sizing: border-box;
+  }
+  .flow-inspector .insp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .flow-inspector .field-grid { display: grid; gap: 8px; margin: 8px 0 12px; }
+  .flow-inspector .field-row { display: grid; gap: 4px; }
+  .flow-inspector .field-row label { font: 700 10px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); }
+  .flow-inspector .field-row input, .flow-inspector .field-row select {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--text-1); padding: 8px 9px; font: 12px var(--mono);
+  }
+  .flow-inspector .field-row textarea { min-height: 76px; }
+  .flow-inspector .connect-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: end; margin-top: 8px; }
+  .flow-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0 12px; }
+  .flow-editor textarea { border: 1px solid var(--border); border-radius: 8px; min-height: 180px; }
+  .flow-side { display: flex; flex-direction: column; gap: 12px; }
+  .run-log { margin-top: 12px; }
+  .run-log summary { cursor: pointer; color: var(--text-2); font-weight: 600; }
+  .run-log .lines { margin-top: 10px; max-height: 190px; overflow: auto; font: 11.5px/1.55 var(--mono); color: var(--text-2); }
+  .run-log .line { border-top: 1px solid var(--border); padding: 5px 0; }
+  @media (max-width: 880px) {
+    .flow-shell { width: 100%; }
+    .flow-board, .flow-board.no-insp { grid-template-columns: 1fr; }
+    .flow-stage { min-height: 500px; }
+    /* short/narrow canvas: the palette lies down and wraps instead of scrolling */
+    .flow-palette { flex-direction: row; flex-wrap: wrap; position: static; width: 100%; padding: 6px 8px; }
+    .flow-palette .pal-head { padding: 0 4px 0 2px; }
+    .pal-btn::after { left: 50%; top: calc(100% + 8px); transform: translateX(-50%); }
+  }
 
   /* ---------- cells as field-guide cards ---------- */
   .cell {
@@ -229,6 +413,50 @@
   .spin { display: inline-block; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .home { color: var(--text-2); text-align: center; padding: 60px 0; }
+
+  /* ---------- first-run onboarding — start from the thing being tested ---------- */
+  .onboard { max-width: 760px; margin: 0 auto; }
+  .ob-section { margin-top: 20px; }
+  .ob-label {
+    font: 700 10.5px var(--sans); letter-spacing: .13em; text-transform: uppercase;
+    color: var(--text-3); margin-bottom: 8px;
+  }
+  .goal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 10px; }
+  .posture-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  .choice {
+    text-align: left; background: var(--surface); border: 1px solid var(--border-2);
+    border-radius: var(--radius); padding: 12px 14px; cursor: pointer; display: block;
+  }
+  .choice:hover { border-color: var(--accent); }
+  .choice.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+  .choice b { display: block; font-size: 13.5px; }
+  .choice .d { display: block; color: var(--text-2); font-size: 12px; margin-top: 3px; }
+  .ob-starter {
+    background: var(--surface); border: 1px solid var(--border-2);
+    border-radius: var(--radius); padding: 14px 16px;
+  }
+  .ob-starter .tpl-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .ob-starter .tpl-title { font-family: var(--display); font-size: 19px; font-weight: 600; }
+  .ob-starter .d { color: var(--text-2); font-size: 12.5px; margin-top: 4px; }
+  .tag {
+    font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; background: var(--surface-3); color: var(--text-2);
+  }
+  .tag.live { background: var(--amber-dim); color: var(--amber); }
+  .tag.offline { background: var(--green-dim); color: var(--accent); }
+  .tag.rec { background: var(--accent-glow); color: var(--accent); }
+  .ob-note { color: var(--text-3); font-size: 12px; font-style: italic; margin-top: 8px; }
+  .ob-note code {
+    background: var(--surface-3); border-radius: 4px; padding: 0 4px;
+    font: 11.5px var(--mono); color: var(--text-1); font-style: normal;
+  }
+  .ob-note select { margin-left: 6px; }
+  .ob-note textarea { display:block; width:100%; margin-top:6px; min-height:88px; resize:vertical; }
+  .ob-create-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .ob-cli {
+    font-family: var(--mono); font-size: 11.5px; color: var(--text-2);
+    background: var(--surface-2); border-radius: 8px; padding: 7px 11px; margin-top: 12px;
+  }
 
   /* ---------- results — stat cards + scatter ---------- */
   .results-bar {
@@ -362,6 +590,77 @@
 </head>
 <body>
 
+<!-- cell-type icon vocabulary — one <symbol> per type; the canvas palette and
+     the flow-node chips both <use> these, so the two can never drift. Stroke
+     grammar matches the rail: 1.8 / currentColor / round caps. The only fills
+     are deliberate accents (the golden star, needle hubs). -->
+<svg class="icon-defs" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ic-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 6.5h14M5 11.5h14M5 16.5h8.5"/>
+  </symbol>
+  <symbol id="ic-data" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="12" cy="5.8" rx="7" ry="2.6"/>
+    <path d="M5 5.8v12.4c0 1.44 3.13 2.6 7 2.6s7-1.16 7-2.6V5.8"/>
+    <path d="M5 12c0 1.44 3.13 2.6 7 2.6s7-1.16 7-2.6"/>
+  </symbol>
+  <symbol id="ic-prompt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 7.2a2.7 2.7 0 0 1 2.7-2.7h10.6A2.7 2.7 0 0 1 20 7.2v6.1a2.7 2.7 0 0 1-2.7 2.7H10l-3.8 3.5V16h.5A2.7 2.7 0 0 1 4 13.3z"/>
+    <path d="M9.4 8.4c0 1.5-.4 2.3-1.4 3M14.7 8.4c0 1.5-.4 2.3-1.4 3"/>
+  </symbol>
+  <symbol id="ic-agent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4.8" y="8.2" width="14.4" height="10" rx="2.6"/>
+    <path d="M12 8.2V5.5"/>
+    <circle cx="12" cy="4" r="1.3"/>
+    <path d="M9.1 12.5v1.9M14.9 12.5v1.9"/>
+    <path d="M2.4 12.8v2.8M21.6 12.8v2.8"/>
+  </symbol>
+  <symbol id="ic-metric" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4.6 16.4a7.4 7.4 0 0 1 14.8 0"/>
+    <path d="M12 16.4l3.7-4.2"/>
+    <circle cx="12" cy="16.4" r="1" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="ic-judge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 4.2v15.3M8.8 19.5h6.4M5.4 6.8h13.2"/>
+    <path d="M5.4 6.8 3.2 12a2.9 2.9 0 0 0 4.4 0L5.4 6.8zM18.6 6.8 16.4 12a2.9 2.9 0 0 0 4.4 0l-2.2-5.2z"/>
+  </symbol>
+  <symbol id="ic-golden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2.8l7 2.7v5.4c0 4.5-2.9 7.7-7 9.5-4.1-1.8-7-5-7-9.5V5.5l7-2.7z"/>
+    <path fill="currentColor" stroke="none" d="M12 7.8l.88 1.99 2.16.24-1.61 1.45.45 2.13L12 12.5l-1.88 1.09.45-2.13-1.61-1.45 2.16-.24z"/>
+  </symbol>
+  <symbol id="ic-eval" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 2.5v7a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.4a2 2 0 0 1-.21-.9v-7"/>
+    <path d="M8.5 2.5h7M7 15.5h10"/>
+  </symbol>
+  <symbol id="ic-annotate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16.8 3.7a2 2 0 0 1 2.8 2.8L8.3 17.8l-3.8 1 1-3.8L16.8 3.7z"/>
+    <path d="M13.9 19.3l2.1 2.1 4-4.2"/>
+  </symbol>
+  <symbol id="ic-switch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.5 12h4.2c3.1 0 3.1-4.8 6.2-4.8h6.6"/>
+    <path d="M7.7 12c3.1 0 3.1 4.8 6.2 4.8h6.6"/>
+    <path d="M17.8 4.5l2.7 2.7-2.7 2.7M17.8 14.1l2.7 2.7-2.7 2.7"/>
+  </symbol>
+  <symbol id="ic-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 7.5h13.2M14.4 4.3l3.2 3.2-3.2 3.2"/>
+    <path d="M20 16.5H6.8M9.6 13.3l-3.2 3.2 3.2 3.2"/>
+  </symbol>
+  <symbol id="ic-retry" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+    <path d="M21 3v5h-5"/>
+  </symbol>
+  <symbol id="ic-catch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="8.6"/>
+    <circle cx="12" cy="12" r="3.7"/>
+    <path d="M5.9 5.9l3.5 3.5M14.6 14.6l3.5 3.5M14.6 9.4l3.5-3.5M5.9 18.1l3.5-3.5"/>
+  </symbol>
+  <symbol id="ic-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+  </symbol>
+  <symbol id="ic-cell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="5" y="5" width="14" height="14" rx="3"/>
+  </symbol>
+</svg>
+
 <nav class="rail" id="rail">
   <div class="mark" title="tl bench">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
@@ -399,11 +698,11 @@
 
 <div class="content">
   <header class="topbar">
-    <select id="ws" title="workspace"></select>
-    <select id="nb" title="notebook"></select>
-    <button id="new-nb" class="quiet" title="new notebook">+ notebook</button>
-    <button id="demo-nb" class="quiet" title="scaffold the demo notebook">demo</button>
+    <select id="nb" title="project"></select>
+    <select id="ws" class="ws-compact" title="workspace" hidden></select>
+    <button id="new-nb" class="quiet" title="create a project — template or from scratch">+ new project</button>
     <button id="run-all" class="primary">▶ run all</button>
+    <button id="stop-run" class="quiet" title="stop the active run" hidden>■ Stop</button>
     <div class="providers" id="providers"></div>
   </header>
   <main id="main"><div class="home">loading…</div></main>
@@ -416,8 +715,11 @@
 // state + plumbing
 // ---------------------------------------------------------------------------
 const S = {
-  ws: null, nb: null, boot: null, notebook: null,
-  running: new Set(), editing: new Set(), view: 'notebook',
+  ws: null, nb: null, boot: null, notebook: null, nbList: [],
+  onboard: { goal: 'compare', posture: 'fixture', override: '', name: '', notes: '', copyFrom: '' },
+  running: new Set(), activeRuns: {}, editing: new Set(), view: 'notebook',
+  goalEditing: false,
+  flow: { layout: null, selected: null, editing: false, logOpen: true, inspectorOpen: true, runLog: [], connect: null },
   journal: { runs: [], notebooks: [], models: [], nbFilter: '', modelFilter: '', detail: null, openId: null },
   results: { runs: [], models: [], modelFilter: '', xKey: '', yKey: '' },
 };
@@ -465,9 +767,14 @@ const ago = ts => {
 function applyTheme(t) {
   document.documentElement.classList.toggle('dark', t === 'dark');
 }
+// ?view=flow&theme=dark deep links: presentation-only overrides so a fresh
+// profile (screenshots, shared links) can land on a specific lens directly
+const DEEP_LINK = new URLSearchParams(location.search);
 (function initTheme() {
+  const linked = DEEP_LINK.get('theme');
   const saved = localStorage.getItem('bench.theme');
-  applyTheme(saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  applyTheme((linked === 'dark' || linked === 'light' ? linked : null)
+    || saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 })();
 $('#theme').onclick = () => {
   const dark = !document.documentElement.classList.contains('dark');
@@ -475,11 +782,13 @@ $('#theme').onclick = () => {
   applyTheme(dark ? 'dark' : 'light');
 };
 
+// per-view identity is the kicker only — the masthead title/goal belong to
+// the project, constant across all four lenses
 const VIEWS = {
-  flow:     { kicker: 'SPECIMEN', sub: 'the cell graph, drawn from the ledger', spec: 'ui-flow-canvas' },
-  notebook: { kicker: 'FIELD NOTEBOOK', sub: 'loose observations & scratch analysis', spec: null },
-  results:  { kicker: 'BENCH RESULTS', sub: 'how the models scored across the trials', spec: 'ui-results-dashboard' },
-  journal:  { kicker: 'JOURNAL', sub: 'every run, catalogued', spec: 'ui-journal-run-history' },
+  flow:     { kicker: 'SPECIMEN', spec: 'ui-flow-canvas' },
+  notebook: { kicker: 'FIELD NOTEBOOK', spec: null },
+  results:  { kicker: 'BENCH RESULTS', spec: 'ui-results-dashboard' },
+  journal:  { kicker: 'JOURNAL', spec: 'ui-journal-run-history' },
 };
 async function setView(v) {
   if (!VIEWS[v]) return;
@@ -488,21 +797,34 @@ async function setView(v) {
     b.classList.toggle('active', b.dataset.view === v);
   if (v === 'journal') await loadJournal();
   else if (v === 'results') await loadResults();
+  else if (v === 'flow') await loadFlowLayout();
   else render();
 }
 for (const b of document.querySelectorAll('#rail button[data-view]'))
   b.onclick = () => { setView(b.dataset.view); };
-S.view = VIEWS[localStorage.getItem('bench.view')] ? localStorage.getItem('bench.view') : 'notebook';
+S.view = VIEWS[DEEP_LINK.get('view')] ? DEEP_LINK.get('view')
+  : VIEWS[localStorage.getItem('bench.view')] ? localStorage.getItem('bench.view') : 'notebook';
 
 // ---------------------------------------------------------------------------
 // boot + navigation
 // ---------------------------------------------------------------------------
 async function boot() {
   S.boot = await api('/api/state');
-  $('#providers').innerHTML = S.boot.providers.map(p =>
-    `<span title="${esc(p.reason)}"><span class="dot ${p.ok ? 'ok' : 'no'}"></span>${esc(p.name)}</span>`).join('');
+  // "fixture" is bench jargon — display it as "offline" with a tooltip and a
+  // hollow dot, set apart from the real-provider dots by a divider. Display
+  // side only: the provider's internal name stays `fixture`.
+  $('#providers').innerHTML = S.boot.providers.map(p => {
+    if (p.name === 'fixture') {
+      return `<span title="built-in offline provider (provider: fixture) — deterministic, no keys, no network">` +
+        `<span class="dot offline"></span>offline</span><i class="prov-sep"></i>`;
+    }
+    return `<span title="${esc(p.reason)}"><span class="dot ${p.ok ? 'ok' : 'no'} p-${cls(p.name)}"></span>${esc(p.name)}</span>`;
+  }).join('');
   const wsSel = $('#ws');
   wsSel.innerHTML = S.boot.workspaces.map(w => `<option>${esc(w.name)}</option>`).join('');
+  // standalone mode (a single workspace) needs no picker; tl-integrated
+  // checkouts keep it as a compact secondary control beside the projects list
+  wsSel.hidden = S.boot.workspaces.length <= 1;
   S.ws = localStorage.getItem('bench.ws');
   if (!S.boot.workspaces.some(w => w.name === S.ws)) S.ws = (S.boot.workspaces[0] || {}).name || null;
   if (S.ws) wsSel.value = S.ws;
@@ -513,57 +835,226 @@ async function boot() {
 async function loadNotebooks() {
   if (!S.ws) { $('#main').innerHTML = '<div class="home">No workspaces under projects/ — create one with /tl:new, then come back.</div>'; return; }
   const d = await api('/api/notebooks?ws=' + encodeURIComponent(S.ws));
+  S.nbList = d.notebooks;
   const sel = $('#nb');
   sel.innerHTML = d.notebooks.map(n => `<option value="${esc(n.name)}">${esc(n.title)}</option>`).join('');
   const remembered = localStorage.getItem('bench.nb.' + S.ws);
   S.nb = d.notebooks.some(n => n.name === remembered) ? remembered : (d.notebooks[0] || {}).name || null;
+  if (!S.nb) { S.notebook = null; S.goalEditing = false; }
   if (S.nb) { sel.value = S.nb; await loadNotebook(); }
   else if (S.view === 'journal') { await loadJournal(); }
   else if (S.view === 'results') { await loadResults(); }
   else {
-    $('#main').innerHTML = '<div class="home">No notebooks in this workspace yet.<br><br>' +
-      '<button class="primary" onclick="makeDemo()">scaffold the demo notebook</button></div>';
+    // first run: no notebooks yet — open the onboarding wizard, which starts
+    // from the thing being tested and scaffolds a starter from the catalogue
+    renderOnboarding();
   }
 }
 
 async function loadNotebook() {
+  S.goalEditing = false;
   S.notebook = await api('/api/notebook?ws=' + encodeURIComponent(S.ws) + '&nb=' + encodeURIComponent(S.nb));
+  if (S.view === 'flow') await loadFlowLayout();
+  render();
+}
+
+async function loadFlowLayout() {
+  if (!S.ws || !S.nb) { render(); return; }
+  try {
+    const d = await api('/api/layout?ws=' + encodeURIComponent(S.ws) + '&nb=' + encodeURIComponent(S.nb));
+    S.flow.layout = d.layout || null;
+  } catch (e) {
+    S.flow.layout = null;
+    toast(String(e.message || e));
+  }
   render();
 }
 
 $('#ws').onchange = e => { S.ws = e.target.value; localStorage.setItem('bench.ws', S.ws); loadNotebooks(); };
 $('#nb').onchange = e => { S.nb = e.target.value; localStorage.setItem('bench.nb.' + S.ws, S.nb); loadNotebook(); };
 $('#run-all').onclick = () => runCell(null);
-$('#demo-nb').onclick = () => makeDemo();
-$('#new-nb').onclick = async () => {
-  const name = prompt('notebook name (lowercase slug):');
-  if (!name) return;
+$('#stop-run').onclick = () => cancelActiveRun();
+// the single creation entry: the wizard owns templates AND from-scratch
+$('#new-nb').onclick = () => showOnboarding();
+// ---------------------------------------------------------------------------
+// first-run onboarding — start from the thing being tested. A deterministic
+// template wizard: testing goal + provider posture map onto the same starter
+// catalogue the CLI scaffolds from (`bench scaffold <id> --name <slug>`), so
+// the UI path and the CLI path write identical notebooks. No network, no
+// generation — the starters are inspectable markdown and explain themselves.
+// ---------------------------------------------------------------------------
+const ONBOARD_GOALS = [
+  { id: 'compare', label: 'Compare answer quality', desc: 'Same task, several models — which reply wins?' },
+  { id: 'tool-agent', label: 'Test a tool-using agent', desc: 'Does the agent actually reach for its tools?' },
+  { id: 'chain', label: 'Chain agents together', desc: 'Draft with one agent, revise with another, judge both.' },
+  { id: 'judge', label: 'Calibrate a judge', desc: 'Label outputs by hand and measure judge agreement.' },
+];
+const ONBOARD_POSTURES = [
+  { id: 'fixture', label: 'Offline (fixture)', desc: 'No keys, no network — runs green anywhere.' },
+  { id: 'live', label: 'Live provider', desc: 'Anthropic, OpenAI, or a compatible endpoint.' },
+  { id: 'bedrock', label: 'Bedrock', desc: 'AWS credentials over the Converse API.' },
+];
+function recommendTemplateId(goal, posture) {
+  if (posture === 'bedrock') return 'bedrock-smoke';
+  if (posture === 'live' && goal === 'compare') return 'live-compare';
+  return ({ compare: 'model-compare', 'tool-agent': 'tool-agent', chain: 'agent-chain', judge: 'judge-calibration' })[goal] || 'model-compare';
+}
+function onboardTemplates() { return (S.boot && S.boot.notebook_templates) || []; }
+function onboardTemplate() {
+  const list = onboardTemplates();
+  const id = S.onboard.override || recommendTemplateId(S.onboard.goal, S.onboard.posture);
+  return list.find(t => t.id === id) || list[0] || null;
+}
+// deterministic, offline naming: the template's default slug, suffixed past
+// any notebook that already claims it (tool-agent, tool-agent-2, …)
+function onboardName(t) {
+  const used = new Set((S.nbList || []).map(n => n.name));
+  const base = (t && t.default_name) || 'starter';
+  if (!used.has(base)) return base;
+  for (let i = 2; ; i++) if (!used.has(base + '-' + i)) return base + '-' + i;
+}
+function setOnboard(key, value) {
+  S.onboard[key] = value;
+  renderOnboarding();
+}
+function showOnboarding() {
+  if (!S.ws) { toast('pick a workspace first'); return; }
+  S.onboard = { goal: 'compare', posture: 'fixture', override: '', name: '', notes: '', copyFrom: '' };
+  renderOnboarding();
+}
+function renderOnboarding() {
+  const templates = onboardTemplates();
+  if (!templates.length) {
+    $('#main').innerHTML = '<div class="home">No starter templates — CLI: <code>bench templates</code></div>';
+    return;
+  }
+  const firstRun = !(S.nbList || []).length;
+  const o = S.onboard;
+  const t = onboardTemplate();
+  const name = o.name || onboardName(t);
+  const auto = !o.override;
+  const goalCards = ONBOARD_GOALS.map(g => `
+    <button type="button" class="choice ${o.goal === g.id ? 'selected' : ''}" onclick="setOnboard('goal','${g.id}')">
+      <b>${esc(g.label)}</b><span class="d">${esc(g.desc)}</span>
+    </button>`).join('');
+  const postureCards = ONBOARD_POSTURES.map(p => `
+    <button type="button" class="choice ${o.posture === p.id ? 'selected' : ''}" onclick="setOnboard('posture','${p.id}')">
+      <b>${esc(p.label)}</b><span class="d">${esc(p.desc)}</span>
+    </button>`).join('');
+  const envLine = t.live && (t.required_env || []).length
+    ? `<div class="ob-note">live env when flipped: ${esc(t.required_env.join(', '))}</div>` : '';
+  const postureNote = t.live
+    ? `<div class="ob-note">ships offline on fixture; going live is a one-word <code>provider:</code> edit marked <code># live:</code>.</div>`
+    : (o.posture !== 'fixture'
+      ? `<div class="ob-note">this starter ships offline on fixture — scaffold it, run it green, then flip the <code>provider:</code> lines to go live.</div>`
+      : '');
+  $('#main').innerHTML = `
+  <div class="onboard">
+    <div class="masthead">
+      <div class="kicker">${firstRun ? 'First run' : 'New project'} · ${esc(S.ws)}</div>
+      <h1>What are you testing?</h1>
+      <div class="sub">describe the workflow — the bench scaffolds a starter notebook that explains itself</div>
+    </div>
+    ${firstRun ? '' : `<button class="quiet" onclick="loadNotebooks()">← back to the project</button>`}
+    <div class="ob-section"><div class="ob-label">Project</div>
+      <div class="ob-starter">
+        <div class="ob-create-row">
+          <label>name <input type="text" id="ob-name" value="${esc(name)}" spellcheck="false" style="font-family:var(--mono)" oninput="S.onboard.name=this.value"></label>
+          <label>or duplicate <select id="ob-copy" onchange="S.onboard.copyFrom=this.value">
+            <option value="">start new</option>
+            ${(S.nbList || []).map(n => `<option value="${esc(n.name)}" ${o.copyFrom === n.name ? 'selected' : ''}>${esc(n.title)} · ${esc(n.name)}</option>`).join('')}
+          </select></label>
+        </div>
+        <label class="ob-note" style="display:block;font-style:normal">what are you testing?
+          <textarea id="ob-notes" rows="4" placeholder="Describe the workflow in your own words." oninput="S.onboard.notes=this.value">${esc(o.notes)}</textarea>
+        </label>
+      </div></div>
+    <div class="ob-section"><div class="ob-label">Proposed setup</div>
+      <div class="ob-note">Adjust any part of the proposal before creating the project.</div>
+      <div class="ob-label" style="margin-top:12px">Testing goal</div>
+      <div class="goal-grid">${goalCards}</div></div>
+    <div class="ob-section"><div class="ob-label">Model posture</div>
+      <div class="posture-row">${postureCards}</div></div>
+    <div class="ob-section"><div class="ob-label">Starter pattern</div>
+      <div class="ob-starter">
+        <div class="tpl-head">
+          <span class="tpl-title">${esc(t.title)}</span>
+          <span class="tag ${t.live ? 'live' : 'offline'}">${t.live ? 'LIVE' : 'offline'}</span>
+          ${auto ? '<span class="tag rec">recommended</span>' : ''}
+        </div>
+        <div class="d">${esc(t.description)}</div>
+        ${postureNote}${envLine}
+        <label class="ob-note" style="font-style:normal">pattern:
+          <select onchange="setOnboard('override', this.value)">
+            <option value="">auto — ${esc(recommendTemplateId(o.goal, o.posture))}</option>
+            ${templates.map(x => `<option value="${esc(x.id)}" ${o.override === x.id ? 'selected' : ''}>${esc(x.id)} [${x.live ? 'LIVE' : 'offline'}]</option>`).join('')}
+          </select></label>
+        <div class="ob-create-row">
+          <button class="primary" onclick="createFromOnboarding()">Create project</button>
+          <button class="quiet" onclick="createBlankFromOnboarding()">start blank</button>
+        </div>
+        <div class="ob-cli">CLI equivalent: bench scaffold ${esc(t.id)} --name ${esc(name)}</div>
+      </div></div>
+  </div>`;
+}
+async function createBlankFromOnboarding() {
+  const el = $('#ob-name');
+  const name = el && el.value.trim();
+  if (!name) { toast('name the notebook first (lowercase slug)'); if (el) el.focus(); return; }
   try {
-    const r = await post('/api/notebook-create', { ws: S.ws, name });
+    const copy = $('#ob-copy');
+    const notes = ($('#ob-notes') && $('#ob-notes').value) || '';
+    const r = await post('/api/notebook-create', { ws: S.ws, name, copy_from: copy && copy.value, notes });
     localStorage.setItem('bench.nb.' + S.ws, r.name);
-    await loadNotebooks(); toast('notebook created');
-  } catch (e) { toast(String(e.message || e)); }
-};
-async function makeDemo() {
-  try {
-    const r = await post('/api/notebook-create', { ws: S.ws, demo: true });
-    localStorage.setItem('bench.nb.' + S.ws, r.name);
-    await loadNotebooks(); toast('demo notebook created — hit ▶ run all');
+    await loadNotebooks(); toast('blank notebook created');
   } catch (e) { toast(String(e.message || e)); }
 }
-
+async function createFromOnboarding() {
+  const t = onboardTemplate();
+  if (!t) return;
+  const nameEl = $('#ob-name');
+  const name = (nameEl && nameEl.value.trim()) || onboardName(t);
+  try {
+    const copy = $('#ob-copy');
+    const notes = ($('#ob-notes') && $('#ob-notes').value) || '';
+    const r = await post('/api/notebook-create', copy && copy.value
+      ? { ws: S.ws, name, copy_from: copy.value, notes }
+      : { ws: S.ws, template: t.id, name, notes });
+    localStorage.setItem('bench.nb.' + S.ws, r.name);
+    await loadNotebooks();
+    toast(r.live ? `scaffolded ${r.name} — LIVE starter, ships on fixture` : `scaffolded ${r.name} — hit ▶ run all`);
+  } catch (e) { toast(String(e.message || e)); }
+}
 // ---------------------------------------------------------------------------
 // actions
 // ---------------------------------------------------------------------------
+function flowLog(msg) {
+  const d = new Date();
+  const stamp = String(d.getHours()).padStart(2, '0') + ':' +
+    String(d.getMinutes()).padStart(2, '0') + ':' +
+    String(d.getSeconds()).padStart(2, '0') + '.' +
+    String(d.getMilliseconds()).padStart(3, '0');
+  S.flow.runLog.unshift({ stamp, msg });
+  S.flow.runLog = S.flow.runLog.slice(0, 80);
+}
+
 async function runCell(id) {
   const key = id || '__all__';
   if (S.running.has(key)) return;
-  S.running.add(key); render();
+  const runId = makeRunId();
+  flowLog(id ? `run ${id} requested` : 'run all requested');
+  S.running.add(key);
+  S.activeRuns[key] = runId;
+  render();
   try {
-    const r = await post('/api/run', { ws: S.ws, nb: S.nb, cell: id || undefined, force: Boolean(id) });
+    const r = await post('/api/run', { ws: S.ws, nb: S.nb, cell: id || undefined, force: Boolean(id), run_id: runId });
     S.notebook = r.notebook;
-    toast(r.ran.length ? 'ran: ' + r.ran.join(', ') : 'nothing stale');
+    if (r.status === 'cancelled') flowLog(`cancelled ${r.run_id}`);
+    if (r.ran.length) r.ran.forEach(cid => flowLog(`ran ${cid}`));
+    else if (r.status !== 'cancelled') flowLog(id ? `${id} already fresh` : 'nothing stale');
+    toast(r.status === 'cancelled' ? 'run cancelled' : (r.ran.length ? 'ran: ' + r.ran.join(', ') : 'nothing stale'));
   } catch (e) {
+    flowLog(`error: ${String(e.message || e)}`);
     toast(String(e.message || e));
     // a failed run may still have executed part of its plan — resync from disk
     // so fresh/stale dots and error markers reflect what actually happened
@@ -571,21 +1062,47 @@ async function runCell(id) {
     catch { /* server unreachable — keep the last known view */ }
   }
   S.running.delete(key);
+  delete S.activeRuns[key];
   if (S.view === 'journal') loadJournal();
   else if (S.view === 'results') loadResults();
   else render();
+}
+
+function makeRunId() {
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 17);
+  return 'run-' + stamp + '-' + Math.floor(Math.random() * 1e6);
+}
+
+async function cancelActiveRun() {
+  const keys = Array.from(S.running);
+  const key = keys[0];
+  const runId = key && S.activeRuns[key];
+  if (!runId) return;
+  flowLog(`stop requested for ${runId}`);
+  try {
+    await post('/api/run-cancel', { run_id: runId });
+    toast('stopping at next cell boundary');
+  } catch (e) {
+    toast(String(e.message || e));
+  }
 }
 
 async function saveCell(id) {
   const cell = S.notebook.cells.find(c => c.id === id);
   const ta = document.getElementById('ed-' + id);
   if (!cell || !ta) return;
+  await saveCellValue(cell, ta.value, () => {
+    S.editing.delete(id);
+  });
+}
+
+async function saveCellValue(cell, value, afterSave) {
   try {
     const body = cell.type === 'note'
-      ? { ws: S.ws, nb: S.nb, id, text: ta.value }
-      : { ws: S.ws, nb: S.nb, id, raw: ta.value };
+      ? { ws: S.ws, nb: S.nb, id: cell.id, text: value }
+      : { ws: S.ws, nb: S.nb, id: cell.id, raw: value };
     const r = await post('/api/cell-save', body);
-    S.editing.delete(id);
+    if (afterSave) afterSave();
     S.notebook = r.notebook;
     render(); toast('saved');
   } catch (e) { toast(String(e.message || e)); }
@@ -600,12 +1117,24 @@ async function deleteCell(id) {
 }
 
 async function addCell(type, after) {
+  const before = new Set((S.notebook && S.notebook.cells || []).map(c => c.id));
   try {
     const r = await post('/api/cell-add', { ws: S.ws, nb: S.nb, type, after });
     S.notebook = r.notebook;
-    const added = r.notebook.cells.map(c => c.id).find(cid => !document.getElementById('cell-' + CSS.escape(cid)));
-    if (added) S.editing.add(added);
+    const added = r.notebook.cells.map(c => c.id).find(cid => !before.has(cid));
+    if (added) {
+      S.editing.add(added);
+      if (S.view === 'flow') {
+        S.flow.selected = added;
+        S.flow.inspectorOpen = true;
+        S.flow.editing = true;
+      }
+    }
     render(); toast('added ' + type + ' cell');
+    if (S.view === 'flow' && added && S.flow.editing) {
+      const ta = document.getElementById('flow-ed-' + added);
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    }
   } catch (e) { toast(String(e.message || e)); }
 }
 
@@ -633,14 +1162,54 @@ async function decideGoldenItem(cellId, set, itemId, status) {
 // ---------------------------------------------------------------------------
 // render — masthead + view dispatch
 // ---------------------------------------------------------------------------
+// Project-first: every view carries the same masthead — the notebook's title
+// with its goal beneath. The view survives only in the small-caps kicker
+// (SPECIMEN · <nb>) and the rail's active state. Absent goal → title only,
+// no reserved line, no layout jump; the pencil rides the title instead.
 function masthead() {
   const v = VIEWS[S.view];
-  const title = S.view === 'notebook'
-    ? (S.notebook && (S.notebook.meta.title || S.notebook.name)) || 'Field notebook'
-    : { flow: 'The specimen', results: 'The bench', journal: 'Journal' }[S.view];
   const kicker = v.kicker + (S.nb ? ' · ' + S.nb : '');
+  const meta = (S.notebook && S.notebook.meta) || {};
+  const title = meta.title || (S.notebook && S.notebook.name) || S.nb || S.ws || 'tl bench';
+  const goal = meta.goal ? String(meta.goal) : '';
+  const canEdit = Boolean(S.nb && S.notebook);
+  const pencil = canEdit && !S.goalEditing
+    ? `<button class="goal-edit" title="${goal ? 'edit the project goal' : 'add a project goal'}" onclick="startGoalEdit()">✎${goal ? '' : ' goal'}</button>`
+    : '';
+  let goalLine = '';
+  if (S.goalEditing && canEdit) {
+    goalLine = `<div class="goal-form">
+      <input type="text" id="goal-input" value="${esc(goal)}" placeholder="one line: what is this project trying to prove?"
+        onkeydown="if(event.key==='Enter')saveGoal();else if(event.key==='Escape')cancelGoalEdit()">
+      <button class="primary" onclick="saveGoal()">save</button>
+      <button class="quiet" onclick="cancelGoalEdit()">cancel</button>
+    </div>`;
+  } else if (goal) {
+    goalLine = `<div class="sub">${esc(goal)}${pencil}</div>`;
+  }
   return `<div class="masthead"><div class="kicker">${esc(kicker)}</div>
-    <h1>${esc(title)}</h1><div class="sub">${esc(v.sub)}</div></div>`;
+    <h1>${esc(title)}${goal || S.goalEditing ? '' : pencil}</h1>${goalLine}</div>`;
+}
+
+function startGoalEdit() {
+  S.goalEditing = true;
+  render();
+  const el = document.getElementById('goal-input');
+  if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+function cancelGoalEdit() {
+  S.goalEditing = false;
+  render();
+}
+async function saveGoal() {
+  const el = document.getElementById('goal-input');
+  if (!el) return;
+  try {
+    const r = await post('/api/notebook-meta', { ws: S.ws, nb: S.nb, updates: { goal: el.value } });
+    S.notebook = r.notebook;
+    S.goalEditing = false;
+    render(); toast('goal saved');
+  } catch (e) { toast(String(e.message || e)); }
 }
 
 function plate(view) {
@@ -701,6 +1270,7 @@ function resultsPoints(runs, modelFilter) {
         model,
         winner: Boolean(c.winner),
         judge_overall_mean: c.judge_overall_mean,
+        latency_ms_mean: typeof c.latency_ms_mean === 'number' ? c.latency_ms_mean : null,
         metrics: c.metrics || {},
         n: c.n,
         errors: c.errors,
@@ -776,7 +1346,17 @@ function resultsStats(points) {
       delta: { text: `${d >= 0 ? '+' : ''}${d} vs yesterday`, dir: d >= 0 ? 'up' : 'down' },
     });
   }
-  // latency lives on raw bench-log rows; /api/journal does not expose it yet — hide, don't fake
+  // avg latency across rows that recorded one (fixture's 0ms rows mean
+  // "not measured" — only live-provider latencies light the card)
+  const lats = points.map(p => p.latency_ms_mean).filter(v => typeof v === 'number' && v > 0);
+  if (lats.length) {
+    const mean = lats.reduce((s, v) => s + v, 0) / lats.length;
+    cards.push({
+      label: 'Avg latency',
+      value: mean >= 1000 ? (mean / 1000).toFixed(2) + 's' : Math.round(mean) + 'ms',
+      note: `${lats.length} live candidate row${lats.length === 1 ? '' : 's'}`,
+    });
+  }
   const ths = notebookThresholds();
   if (ths.length) {
     const t = ths[0].threshold;
@@ -1122,14 +1702,613 @@ function closeJournalRun() {
   renderJournal();
 }
 
+// ---------------------------------------------------------------------------
+// flow canvas — graph view, layout-only editing
+// ---------------------------------------------------------------------------
+function flowCells() {
+  return (S.notebook && S.notebook.cells) || [];
+}
+
+function flowOrderedCells() {
+  const cells = flowCells();
+  const byId = new Map(cells.map(c => [c.id, c]));
+  const ids = [...((S.notebook.graph && S.notebook.graph.order) || []), ...cells.map(c => c.id)]
+    .filter((id, i, a) => byId.has(id) && a.indexOf(id) === i);
+  return ids.map(id => byId.get(id));
+}
+
+function flowDepths() {
+  // ALAP layering: the canvas reads source → result. A node with consumers
+  // sits immediately left of its earliest consumer, so metrics/judges hug
+  // the eval that uses them instead of piling into column 0; sinks (eval,
+  // annotate) take the rightmost columns. Data cells always anchor at
+  // column 0 — even consumerless ones (they are sources awaiting a consumer,
+  // not sinks) — and isolated cells (the leading note) stay at column 0.
+  const graph = (S.notebook && S.notebook.graph) || { deps: {}, order: [] };
+  const cells = flowOrderedCells();
+  if (!cells.length) return {};
+  const byId = new Map(cells.map(c => [c.id, c]));
+  const consumers = new Map(cells.map(c => [c.id, []]));
+  for (const c of cells) {
+    for (const d of graph.deps[c.id] || []) if (consumers.has(d)) consumers.get(d).push(c.id);
+  }
+  // Forward (ASAP) pass just to find the graph's span — sinks seat there.
+  let span = 0;
+  {
+    const asap = {};
+    for (const c of cells) {
+      const deps = (graph.deps[c.id] || []).filter(d => byId.has(d));
+      asap[c.id] = deps.length ? Math.max(...deps.map(d => asap[d] || 0)) + 1 : 0;
+      span = Math.max(span, asap[c.id]);
+    }
+  }
+  // ALAP pass over reverse-topological order: depth = min(depth of consumers) - 1.
+  const depths = {};
+  for (let i = cells.length - 1; i >= 0; i--) {
+    const c = cells[i];
+    const cons = consumers.get(c.id);
+    depths[c.id] = cons.length
+      ? Math.min(...cons.map(k => (depths[k] !== undefined ? depths[k] : span))) - 1
+      : span;
+  }
+  // Normalize to min 0, then pin anchors.
+  const min = Math.min(...Object.values(depths));
+  for (const c of cells) {
+    depths[c.id] -= min;
+    const hasCons = consumers.get(c.id).length > 0;
+    const hasDeps = (graph.deps[c.id] || []).some(d => byId.has(d));
+    if ((!hasCons && !hasDeps) || c.type === 'data') depths[c.id] = 0;
+  }
+  return depths;
+}
+
+function autoFlowPositions() {
+  const depths = flowDepths();
+  const rows = {};
+  const out = {};
+  const snap = n => Math.round(n / 8) * 8;
+  for (const c of flowOrderedCells()) {
+    const d = depths[c.id] || 0;
+    rows[d] = rows[d] || 0;
+    out[c.id] = { x: snap(36 + d * 260), y: snap(38 + rows[d] * 126) };
+    rows[d]++;
+  }
+  return out;
+}
+
+function flowPositions() {
+  const auto = autoFlowPositions();
+  const saved = (S.flow.layout && S.flow.layout.positions) || {};
+  const out = {};
+  for (const id of Object.keys(auto)) out[id] = saved[id] || auto[id];
+  return out;
+}
+
+function flowSize(pos) {
+  const vals = Object.values(pos);
+  const maxX = vals.length ? Math.max(...vals.map(p => p.x)) : 0;
+  const maxY = vals.length ? Math.max(...vals.map(p => p.y)) : 0;
+  return { w: Math.max(780, maxX + 270), h: Math.max(540, maxY + 170) };
+}
+
+// A control node fresh off the palette has an empty config — switch/map/
+// retry/catch/tool ship no starter fields, so there is nothing to run yet
+// and nothing wrong. Grey "unconfigured" beats red: errors mean "ran and
+// failed" or "config invalid", not "you just created me". Display-side only;
+// the moment any field is set, the normal states take over.
+const CONTROL_TYPES = new Set(['switch', 'map', 'retry', 'catch', 'tool']);
+function isUnconfigured(cell) {
+  return CONTROL_TYPES.has(cell.type) && !Object.keys(cell.config || {}).length;
+}
+
+function flowStatus(cell) {
+  if (cell.type === 'note') return { cls: 'note', label: 'note' };
+  if (isUnconfigured(cell)) return { cls: 'unconfigured', label: 'unconfigured' };
+  if (S.running.has('__all__') || S.running.has(cell.id)) return { cls: 'running', label: 'running' };
+  const st = (S.notebook.state || {})[cell.id] || {};
+  if (st.error) return { cls: 'error', label: 'error' };
+  if (!st.ran_at) return { cls: '', label: 'never ran' };
+  if (st.stale) return { cls: 'stale', label: 'stale' };
+  return { cls: 'fresh', label: 'fresh' };
+}
+
+function cellSecondary(cell) {
+  const c = cell.config || {};
+  if (cell.type === 'agent' || cell.type === 'judge') {
+    if (c.input_from) return `from ${c.input_from}${c.input_path ? '.' + c.input_path : ''}`;
+    return [c.provider, c.model].filter(Boolean).join('/') || c.kind || 'model';
+  }
+  if (cell.type === 'metric') return c.kind || 'metric';
+  if (cell.type === 'golden') return c.set || 'golden set';
+  if (cell.type === 'data') return c.source || `${Array.isArray(c.rows) ? c.rows.length : 0} rows`;
+  if (cell.type === 'prompt') return c.template ? 'template' : 'prompt';
+  if (cell.type === 'eval') return `data: ${c.data || 'unset'}`;
+  if (cell.type === 'annotate') return c.golden ? `golden: ${c.golden}` : `source: ${c.source || 'unset'}`;
+  if (cell.type === 'note') return clip(cell.text || 'note', 60);
+  return cell.type;
+}
+
+// every cell-type glyph resolves to a <symbol> in the icon-defs sheet; unknown
+// types fall back to the plain #ic-cell frame. cls() guards the id, so the
+// returned markup is safe to inline unescaped.
+const CELL_ICON_IDS = new Set(['note', 'data', 'prompt', 'agent', 'metric', 'judge', 'golden', 'eval', 'annotate', 'switch', 'map', 'retry', 'catch', 'tool']);
+function cellIcon(type) {
+  const id = CELL_ICON_IDS.has(type) ? cls(type) : 'cell';
+  return `<svg class="type-icon" aria-hidden="true"><use href="#ic-${id}"/></svg>`;
+}
+
+function renderFlowEdges(pos, size) {
+  const graph = S.notebook.graph || { deps: {} };
+  const byId = Object.fromEntries((S.notebook.cells || []).map(c => [c.id, c]));
+  const selected = S.flow.selected;
+  let svg = `<svg class="flow-edges" viewBox="0 0 ${size.w} ${size.h}" aria-hidden="true">`;
+  for (const [to, deps] of Object.entries(graph.deps || {})) {
+    for (const from of deps || []) {
+      if (!pos[from] || !pos[to]) continue;
+      const x1 = pos[from].x + 190, y1 = pos[from].y + 41;
+      const x2 = pos[to].x, y2 = pos[to].y + 41;
+      const gap = Math.max(80, Math.abs(x2 - x1) / 2);
+      const hot = selected === from || selected === to;
+      const toCell = byId[to];
+      const chain = toCell && toCell.config && toCell.config.input_from === from;
+      svg += `<path class="flow-edge ${chain ? 'chain' : ''} ${hot ? 'hot' : ''}" d="M ${x1} ${y1} C ${x1 + gap} ${y1}, ${x2 - gap} ${y2}, ${x2} ${y2}"/>`;
+    }
+  }
+  const connecting = S.flow.connect;
+  if (connecting && pos[connecting.from] && connecting.point) {
+    const x1 = pos[connecting.from].x + 190;
+    const y1 = pos[connecting.from].y + 41;
+    const x2 = connecting.point.x;
+    const y2 = connecting.point.y;
+    const gap = Math.max(60, Math.abs(x2 - x1) / 2);
+    svg += `<path class="flow-edge ghost" d="M ${x1} ${y1} C ${x1 + gap} ${y1}, ${x2 - gap} ${y2}, ${x2} ${y2}"/>`;
+  }
+  return svg + '</svg>';
+}
+
+function renderFlowNode(cell, pos) {
+  const st = flowStatus(cell);
+  const selected = S.flow.selected === cell.id;
+  return `<div class="flow-node ${selected ? 'selected' : ''}" id="flow-${esc(cell.id)}"
+    data-id="${esc(cell.id)}" style="left:${pos.x}px;top:${pos.y}px"
+    onclick="selectFlowNode('${esc(cell.id)}')" onpointerdown="startFlowDrag(event,'${esc(cell.id)}')">
+    <div class="node-top">
+      <span class="node-icon">${cellIcon(cell.type)}</span>
+      <span class="node-id">${esc(cell.id)}</span>
+      <span class="node-dot ${st.cls}" title="${esc(st.label)}"></span>
+    </div>
+    <div class="node-sub">${esc(cellSecondary(cell))}</div>
+    ${cell.type === 'note' ? '' : `<button type="button" class="flow-connect-port" aria-label="connect from ${esc(cell.id)}" title="drag to connect" onpointerdown="startFlowConnect(event,'${esc(cell.id)}')" onmousedown="startFlowConnect(event,'${esc(cell.id)}')"></button>`}
+  </div>`;
+}
+
+function renderFlowInspector() {
+  if (!S.flow.inspectorOpen) return '';
+  const cells = flowOrderedCells();
+  const selected = cells.find(c => c.id === S.flow.selected) || cells.find(c => c.type !== 'note') || cells[0];
+  const closeBtn = `<button class="quiet insp-close" title="close inspector — click any node to reopen" onclick="S.flow.inspectorOpen=false;S.flow.editing=false;renderFlow()">×</button>`;
+  if (!selected) return `<aside class="flow-inspector"><div class="insp-head"><h2>Inspector</h2>${closeBtn}</div><div class="meta">Select a node</div><div class="meta">Click a node to inspect</div></aside>`;
+  S.flow.selected = selected.id;
+  const editing = S.flow.editing;
+  const st = selected.type === 'note' ? null : ((S.notebook.state || {})[selected.id] || {});
+  const status = flowStatus(selected);
+  const deps = ((S.notebook.graph && S.notebook.graph.deps[selected.id]) || []).join(', ') || 'none';
+  const rdeps = ((S.notebook.graph && S.notebook.graph.rdeps[selected.id]) || []).join(', ') || 'none';
+  const cfg = selected.type === 'note' ? { text: selected.text || '' } : (selected.config || {});
+  const last = st ? {
+    state: status.label,
+    ran_at: st.ran_at || null,
+    stale: Boolean(st.stale),
+    error: st.error || null,
+    output: st.output ? '(output recorded)' : null,
+  } : { state: 'not runnable' };
+  const editBody = selected.type === 'note'
+    ? `<textarea id="flow-ed-${esc(selected.id)}" rows="10" placeholder="note text…">${esc(selected.text || '')}</textarea>`
+    : `<textarea id="flow-ed-${esc(selected.id)}" rows="14" spellcheck="false">${esc(selected.raw || '')}</textarea>`;
+  const body = editing
+    ? `<h3>Edit</h3>${editBody}
+       <div class="insp-actions">
+         <button class="primary" onclick="saveFlowCell('${esc(selected.id)}')">save</button>
+         <button onclick="cancelFlowEdit()">cancel</button>
+       </div>`
+    : `${renderSchemaEditor(selected)}
+       <h3>Last run</h3><pre class="block">${esc(JSON.stringify(last, null, 2))}</pre>
+       <div class="insp-actions">
+         <button onclick="startFlowEdit()">✎ edit</button>
+         <button onclick="duplicateFlowCell('${esc(selected.id)}')">duplicate</button>
+         <button class="quiet" onclick="deleteFlowCell('${esc(selected.id)}')">delete</button>
+       </div>`;
+  return `<aside class="flow-inspector">
+    <div class="insp-head"><h2>${esc(selected.id)}</h2>${closeBtn}</div>
+    <div class="meta">${esc(selected.type)} · deps: ${esc(deps)} · downstream: ${esc(rdeps)}</div>
+    <div class="status-line"><span class="node-dot ${status.cls}"></span>${esc(status.label)}${st && st.ran_at ? ' · ' + esc(ago(st.ran_at)) : ''}</div>
+    <button class="primary" onclick="runCell('${esc(selected.id)}')" ${selected.type === 'note' || editing || S.running.has(selected.id) || S.running.has('__all__') ? 'disabled' : ''}>${S.running.has(selected.id) ? '<span class="spin">◌</span> running' : '▶ run this cell'}</button>
+    ${body}
+  </aside>`;
+}
+
+function schemaFields(type) {
+  return ({
+    data: ['file', 'golden', 'limit', 'needs'],
+    prompt: ['data', 'template', 'system', 'needs'],
+    agent: ['provider', 'model', 'prompt', 'data', 'input_from', 'input_path', 'max_turns', 'needs'],
+    metric: ['kind', 'expr', 'threshold', 'needs'],
+    judge: ['kind', 'provider', 'model', 'dimensions', 'rubric', 'scale', 'threshold', 'needs'],
+    golden: ['set', 'provider', 'model', 'seed_data', 'count', 'instructions', 'needs'],
+    eval: ['data', 'candidates', 'metrics', 'judges', 'limit', 'needs'],
+    annotate: ['source', 'golden', 'labels', 'scale', 'instructions', 'needs'],
+    switch: ['input', 'default', 'needs'],
+    map: ['input', 'filter', 'expr', 'needs'],
+    retry: ['target', 'attempts', 'needs'],
+    catch: ['try', 'fallback', 'needs'],
+  })[type] || ['needs'];
+}
+
+function renderSchemaEditor(cell) {
+  if (cell.type === 'note') return `<h3>Config</h3><pre class="block">${esc(JSON.stringify({ text: cell.text || '' }, null, 2))}</pre>`;
+  const cfg = cell.config || {};
+  const fields = schemaFields(cell.type);
+  const rows = fields.map(key => {
+    const v = cfg[key];
+    const value = Array.isArray(v) ? v.join(', ') : (v == null ? '' : String(v));
+    const tag = ['template', 'system', 'rubric', 'instructions', 'expr', 'filter'].includes(key) ? 'textarea' : 'input';
+    const input = tag === 'textarea'
+      ? `<textarea id="schema-${esc(cell.id)}-${esc(key)}" rows="4">${esc(value)}</textarea>`
+      : `<input id="schema-${esc(cell.id)}-${esc(key)}" value="${esc(value)}">`;
+    return `<div class="field-row"><label>${esc(key)}</label>${input}</div>`;
+  }).join('');
+  return `<h3>Fields</h3><div class="field-grid">${rows}</div>
+    <div class="insp-actions">
+      <button class="primary" onclick="saveFlowFields('${esc(cell.id)}')">save fields</button>
+    </div>
+    ${renderConnectEditor(cell)}
+    <h3>Config</h3><pre class="block">${esc(JSON.stringify(cfg, null, 2))}</pre>`;
+}
+
+function renderConnectEditor(cell) {
+  if (cell.type === 'note') return '';
+  const cells = flowOrderedCells().filter(c => c.id !== cell.id && c.type !== 'note');
+  const options = cells.map(c => `<option value="${esc(c.id)}">${esc(c.id)} · ${esc(c.type)}</option>`).join('');
+  const fields = refFieldsFor(cell.type).filter(f => !f.includes('.'));
+  const fieldOptions = ['auto', ...fields].map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+  return `<h3>Connect</h3>
+    <div class="connect-row">
+      <div class="field-row"><label>from</label><select id="connect-from-${esc(cell.id)}">${options}</select></div>
+      <div class="field-row"><label>field</label><select id="connect-field-${esc(cell.id)}">${fieldOptions}</select></div>
+      <button onclick="connectFlowCell('${esc(cell.id)}')" ${cells.length ? '' : 'disabled'}>connect</button>
+    </div>`;
+}
+
+function refFieldsFor(type) {
+  return ({
+    data: ['needs'],
+    prompt: ['data', 'needs'],
+    agent: ['prompt', 'data', 'needs'],
+    metric: ['needs'],
+    judge: ['needs'],
+    golden: ['seed_data', 'needs'],
+    eval: ['data', 'candidates', 'metrics', 'judges', 'needs'],
+    annotate: ['source', 'golden', 'needs'],
+    switch: ['input', 'default', 'needs'],
+    map: ['input', 'needs'],
+    retry: ['target', 'needs'],
+    catch: ['try', 'fallback', 'needs'],
+  })[type] || ['needs'];
+}
+
+function renderRunLog() {
+  return `<details class="run-log" ${S.flow.logOpen ? 'open' : ''} ontoggle="S.flow.logOpen=this.open">
+    <summary>run log · ${S.flow.runLog.length} line${S.flow.runLog.length === 1 ? '' : 's'}</summary>
+    <div class="lines">${S.flow.runLog.length
+      ? S.flow.runLog.map(l => `<div class="line"><b>${esc(l.stamp)}</b> ${esc(l.msg)}</div>`).join('')
+      : '<div class="line">no runs from this canvas yet</div>'}</div>
+  </details>`;
+}
+
+function renderFlow() {
+  const nb = S.notebook;
+  if (!nb) { $('#main').innerHTML = masthead() + '<div class="plate"><p>Pick a notebook to draw the specimen plate.</p></div>'; return; }
+  const cells = flowOrderedCells();
+  const pos = flowPositions();
+  const size = flowSize(pos);
+  if (!S.flow.selected || !cells.some(c => c.id === S.flow.selected)) S.flow.selected = (cells.find(c => c.type !== 'note') || cells[0] || {}).id || null;
+  const leadingNote = cells.find(c => c.type === 'note' && c.text);
+  // one icon button per cell type — same addFlowCell path the old ADD row used.
+  // The topbar owns run-all; the canvas keeps only its node palette and
+  // floating layout control so the graph reads without a text toolbar.
+  const palette = `<nav class="flow-palette" aria-label="add a cell">
+    <span class="pal-head">add</span>
+    ${(S.boot.cell_types || []).map(t =>
+      `<button type="button" class="pal-btn" data-type="${esc(t)}" aria-label="add ${esc(t)} cell" onclick="addFlowCell('${esc(t)}')">${cellIcon(t)}</button>`).join('')}
+  </nav>`;
+  let html = `<div class="flow-shell">${masthead()}`;
+  if (nb.graph && nb.graph.cycle && nb.graph.cycle.length) {
+    html += `<div class="out"><span class="err">dependency cycle: ${esc(nb.graph.cycle.join(', '))}</span></div>`;
+  }
+  html += `<div class="flow-board${S.flow.inspectorOpen ? '' : ' no-insp'}">${palette}<section class="flow-stage"><div class="flow-plane" id="flow-plane" style="width:${size.w}px;height:${size.h}px">
+    ${renderFlowEdges(pos, size)}
+    ${cells.map(c => renderFlowNode(c, pos[c.id])).join('')}
+    ${leadingNote ? `<div class="flow-note-card" tabindex="0" onclick="selectFlowNode('${esc(leadingNote.id)}')"><div class="label">PLATE · SPECIMEN</div><div class="body">${mdLite(clip(leadingNote.text, 260))}</div></div>` : ''}
+    <button type="button" class="flow-relayout" title="re-lay-out — tidy the graph" aria-label="re-lay-out — tidy the graph" onclick="relayoutFlow()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-5V2"/><path d="M4 17h5v5"/><path d="M19 12a7 7 0 0 0-12-5L4 10"/><path d="M5 12a7 7 0 0 0 12 5l3-3"/></svg></button>
+  </div></section>${renderFlowInspector()}</div>
+  ${renderRunLog()}</div>`;
+  $('#main').innerHTML = html;
+}
+
+function selectFlowNode(id) {
+  if (S.flow.editing && S.flow.selected !== id) S.flow.editing = false;
+  S.flow.selected = id;
+  S.flow.inspectorOpen = true;   // clicking a node is the way back in after ✕
+  renderFlow();
+}
+
+function startFlowEdit() {
+  if (!S.flow.selected) return;
+  S.flow.editing = true;
+  S.flow.inspectorOpen = true;
+  renderFlow();
+  const ta = document.getElementById('flow-ed-' + S.flow.selected);
+  if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+}
+
+function cancelFlowEdit() {
+  S.flow.editing = false;
+  renderFlow();
+}
+
+async function saveFlowCell(id) {
+  const cell = S.notebook.cells.find(c => c.id === id);
+  const ta = document.getElementById('flow-ed-' + id);
+  if (!cell || !ta) return;
+  await saveCellValue(cell, ta.value, () => {
+    S.flow.editing = false;
+    S.flow.selected = id;
+    S.flow.inspectorOpen = true;
+  });
+}
+
+async function saveFlowFields(id) {
+  const cell = S.notebook.cells.find(c => c.id === id);
+  if (!cell || cell.type === 'note') return;
+  const updates = {};
+  for (const key of schemaFields(cell.type)) {
+    const el = document.getElementById('schema-' + id + '-' + key);
+    if (el) updates[key] = el.value;
+  }
+  try {
+    const r = await post('/api/cell-config', { ws: S.ws, nb: S.nb, id, updates });
+    S.notebook = r.notebook;
+    S.flow.selected = id;
+    S.flow.inspectorOpen = true;
+    S.flow.editing = false;
+    toast('fields saved');
+    render();
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+async function duplicateFlowCell(id) {
+  const positions = currentFlowPositionsFromDom();
+  try {
+    const r = await post('/api/cell-duplicate', { ws: S.ws, nb: S.nb, id });
+    S.notebook = r.notebook;
+    if (r.id) {
+      const anchor = positions[id] || { x: 36, y: 38 };
+      positions[r.id] = { x: anchor.x + 32, y: anchor.y + 32 };
+      S.flow.selected = r.id;
+      S.flow.inspectorOpen = true;
+      S.flow.editing = false;
+      await saveFlowLayout(positions);
+    }
+    toast('duplicated');
+    render();
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+async function connectFlowCell(to) {
+  const fromEl = document.getElementById('connect-from-' + to);
+  const fieldEl = document.getElementById('connect-field-' + to);
+  const from = fromEl && fromEl.value;
+  const field = fieldEl && fieldEl.value !== 'auto' ? fieldEl.value : '';
+  if (!from) return;
+  try {
+    const r = await post('/api/cell-connect', { ws: S.ws, nb: S.nb, from, to, field });
+    S.notebook = r.notebook;
+    S.flow.selected = to;
+    S.flow.inspectorOpen = true;
+    S.flow.editing = false;
+    toast('connected ' + from + ' → ' + to);
+    render();
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+async function addFlowCell(type) {
+  const before = new Set((S.notebook && S.notebook.cells || []).map(c => c.id));
+  const cells = (S.notebook && S.notebook.cells) || [];
+  // Markdown prose cells are not separately fenced; adjacent notes merge on
+  // parse. Appending a note after the last typed cell gives it durable identity.
+  const anchorId = type === 'note' ? (cells[cells.length - 1] || {}).id : S.flow.selected;
+  try {
+    const r = await post('/api/cell-add', { ws: S.ws, nb: S.nb, type, after: anchorId || undefined });
+    S.notebook = r.notebook;
+    const added = r.notebook.cells.map(c => c.id).find(cid => !before.has(cid));
+    if (added) {
+      S.flow.selected = added;
+      S.flow.editing = true;
+      S.flow.inspectorOpen = true;
+      const positions = currentFlowPositionsFromDom();
+      if (!positions[added]) {
+        const anchor = positions[anchorId] || { x: 36, y: 38 };
+        positions[added] = { x: anchor.x + 32, y: anchor.y + 32 };
+        await saveFlowLayout(positions);
+      }
+    }
+    toast('added ' + type + ' cell');
+    render();
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+async function deleteFlowCell(id) {
+  if (!confirm('Delete cell "' + id + '"? This writes the notebook file.')) return;
+  const positions = currentFlowPositionsFromDom();
+  delete positions[id];
+  try {
+    const r = await post('/api/cell-delete', { ws: S.ws, nb: S.nb, id });
+    S.notebook = r.notebook;
+    if (S.flow.selected === id) S.flow.selected = null;
+    S.flow.editing = false;
+    await saveFlowLayout(positions);
+    toast('deleted');
+    render();
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+function currentFlowPositionsFromDom() {
+  const out = flowPositions();
+  for (const node of document.querySelectorAll('.flow-node[data-id]')) {
+    out[node.dataset.id] = {
+      x: parseInt(node.style.left, 10) || 0,
+      y: parseInt(node.style.top, 10) || 0,
+    };
+  }
+  return out;
+}
+
+async function saveFlowLayout(positions) {
+  try {
+    const r = await post('/api/layout', { ws: S.ws, nb: S.nb, layout: { positions } });
+    S.flow.layout = r.layout;
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+async function relayoutFlow() {
+  try {
+    const r = await post('/api/layout', { ws: S.ws, nb: S.nb, reset: true });
+    S.flow.layout = r.layout; // null — next render uses topo auto-layout
+  } catch (e) {
+    S.flow.layout = null;
+    toast(String(e.message || e));
+  }
+  renderFlow();
+}
+
+function startFlowDrag(ev, id) {
+  if (ev.button != null && ev.button !== 0) return;
+  const node = ev.currentTarget;
+  const plane = document.getElementById('flow-plane');
+  if (!node || !plane) return;
+  S.flow.selected = id;
+  const nr = node.getBoundingClientRect();
+  const offsetX = ev.clientX - nr.left;
+  const offsetY = ev.clientY - nr.top;
+  node.setPointerCapture(ev.pointerId);
+  const move = e => {
+    const pr = plane.getBoundingClientRect();
+    const x = Math.max(8, Math.round((e.clientX - pr.left - offsetX) / 8) * 8);
+    const y = Math.max(8, Math.round((e.clientY - pr.top - offsetY) / 8) * 8);
+    node.style.left = x + 'px';
+    node.style.top = y + 'px';
+    redrawFlowEdges();
+  };
+  const up = async e => {
+    node.releasePointerCapture(e.pointerId);
+    node.removeEventListener('pointermove', move);
+    node.removeEventListener('pointerup', up);
+    await saveFlowLayout(currentFlowPositionsFromDom());
+    renderFlow();
+  };
+  node.addEventListener('pointermove', move);
+  node.addEventListener('pointerup', up);
+}
+
+function startFlowConnect(ev, from) {
+  if (S.flow.connect) return;
+  if (ev.button != null && ev.button !== 0) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  const port = ev.currentTarget;
+  const plane = document.getElementById('flow-plane');
+  if (!port || !plane) return;
+  const pointer = Number.isInteger(ev.pointerId);
+  if (pointer) port.setPointerCapture(ev.pointerId);
+  S.flow.connect = { from, point: flowPointerPoint(ev, plane), target: null };
+  redrawFlowEdges();
+  const setTarget = e => {
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    const node = hit && hit.closest('.flow-node[data-id]');
+    const target = node && node.dataset.id !== from ? node.dataset.id : null;
+    for (const el of document.querySelectorAll('.flow-node.connect-target')) el.classList.remove('connect-target');
+    if (node && target) node.classList.add('connect-target');
+    S.flow.connect.point = flowPointerPoint(e, plane);
+    S.flow.connect.target = target;
+    redrawFlowEdges();
+  };
+  const finish = async e => {
+    setTarget(e);
+    const target = S.flow.connect && S.flow.connect.target;
+    if (pointer && port.hasPointerCapture(e.pointerId)) port.releasePointerCapture(e.pointerId);
+    const targetEl = pointer ? port : window;
+    targetEl.removeEventListener(pointer ? 'pointermove' : 'mousemove', setTarget);
+    targetEl.removeEventListener(pointer ? 'pointerup' : 'mouseup', finish);
+    targetEl.removeEventListener(pointer ? 'pointercancel' : 'mouseleave', cancel);
+    for (const el of document.querySelectorAll('.flow-node.connect-target')) el.classList.remove('connect-target');
+    S.flow.connect = null;
+    redrawFlowEdges();
+    if (!target) return;
+    try {
+      const r = await post('/api/cell-connect', { ws: S.ws, nb: S.nb, from, to: target });
+      S.notebook = r.notebook;
+      S.flow.selected = target;
+      toast('connected ' + from + ' → ' + target);
+      renderFlow();
+    } catch (err) {
+      toast(String(err.message || err));
+      renderFlow();
+    }
+  };
+  const cancel = e => {
+    if (pointer && port.hasPointerCapture(e.pointerId)) port.releasePointerCapture(e.pointerId);
+    const targetEl = pointer ? port : window;
+    targetEl.removeEventListener(pointer ? 'pointermove' : 'mousemove', setTarget);
+    targetEl.removeEventListener(pointer ? 'pointerup' : 'mouseup', finish);
+    targetEl.removeEventListener(pointer ? 'pointercancel' : 'mouseleave', cancel);
+    for (const el of document.querySelectorAll('.flow-node.connect-target')) el.classList.remove('connect-target');
+    S.flow.connect = null;
+    redrawFlowEdges();
+  };
+  const targetEl = pointer ? port : window;
+  targetEl.addEventListener(pointer ? 'pointermove' : 'mousemove', setTarget);
+  targetEl.addEventListener(pointer ? 'pointerup' : 'mouseup', finish);
+  targetEl.addEventListener(pointer ? 'pointercancel' : 'mouseleave', cancel);
+}
+
+function flowPointerPoint(ev, plane) {
+  const r = plane.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.round(ev.clientX - r.left)),
+    y: Math.max(0, Math.round(ev.clientY - r.top)),
+  };
+}
+
+function redrawFlowEdges() {
+  const plane = document.getElementById('flow-plane');
+  if (!plane) return;
+  const pos = currentFlowPositionsFromDom();
+  const size = flowSize(pos);
+  const old = plane.querySelector('.flow-edges');
+  if (old) old.outerHTML = renderFlowEdges(pos, size);
+}
+
 function render() {
   const nb = S.notebook;
   if (!nb && S.view === 'notebook') return;
   const runAllBtn = $('#run-all');
   runAllBtn.innerHTML = S.running.has('__all__') ? '<span class="spin">◌</span> running' : '▶ run all';
+  const stopRunBtn = $('#stop-run');
+  stopRunBtn.hidden = S.running.size === 0;
 
   if (S.view === 'journal') { renderJournal(); return; }
   if (S.view === 'results') { renderResults(); return; }
+  if (S.view === 'flow') { renderFlow(); return; }
   if (S.view !== 'notebook') { $('#main').innerHTML = plate(S.view); return; }
   if (!nb) return;
 
@@ -1145,7 +2324,8 @@ function render() {
       .filter(id => typed.some(c => c.id === id))
       .map((id, i) => {
         const st = nb.state[id] || {};
-        const c = st.error ? 'err' : st.stale ? 'stale' : st.ran_at ? 'fresh' : '';
+        const cell = typed.find(x => x.id === id);
+        const c = (cell && isUnconfigured(cell)) ? '' : st.error ? 'err' : st.stale ? 'stale' : st.ran_at ? 'fresh' : '';
         return (i ? '<span class="arrow">→</span>' : '') +
           `<span class="gcell ${c}" onclick="document.getElementById('cell-${esc(id)}').scrollIntoView({behavior:'smooth',block:'center'})">${esc(id)}</span>`;
       }).join('') + '</div>';
@@ -1189,8 +2369,10 @@ function renderCell(cell) {
   const st = (S.notebook.state || {})[cell.id] || {};
   const running = S.running.has(cell.id) || S.running.has('__all__');
   const editing = S.editing.has(cell.id) || cell.error;
-  const dot = st.error ? 'err' : !st.ran_at ? 'never' : st.stale ? 'stale' : '';
-  const dotTitle = st.error ? 'last run errored' : !st.ran_at ? 'never ran' : st.stale ? 'stale — config or upstream changed' : 'fresh';
+  const unconf = isUnconfigured(cell);
+  const dot = unconf ? 'never' : st.error ? 'err' : !st.ran_at ? 'never' : st.stale ? 'stale' : '';
+  const dotTitle = unconf ? 'unconfigured — fill in its fields to wire it into the graph'
+    : st.error ? 'last run errored' : !st.ran_at ? 'never ran' : st.stale ? 'stale — config or upstream changed' : 'fresh';
 
   return `<div class="cell ${editing ? 'editing' : ''}" id="cell-${esc(cell.id)}">
     <div class="cell-head">
@@ -1214,6 +2396,7 @@ function renderCell(cell) {
 }
 
 function renderOutput(cell, st) {
+  if (isUnconfigured(cell)) return '<div class="empty">unconfigured — fill in its fields (✎) to wire it into the graph</div>';
   if (st.error) return `<div class="err">${esc(st.error)}</div>`;
   if (!st.output) return '<div class="empty">not run yet — hit ▶</div>';
   const o = st.output;

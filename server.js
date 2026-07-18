@@ -31,7 +31,8 @@ const { isDir, safeRead, safePath } = require('./lib/fsutil');
 const { createBench } = require('./lib/engine');
 const { createProviders } = require('./lib/providers');
 const { scaffoldDemo } = require('./lib/demo');
-const { parseNotebook, serializeNotebook, slugId, CELL_TYPES } = require('./lib/notebook');
+const { listTemplates, scaffoldTemplate } = require('./lib/templates');
+const { parseNotebook, serializeNotebook, slugId, CELL_TYPES, REF_FIELDS } = require('./lib/notebook');
 
 // ---------- journal (read-only run history from _metrics + eval artifacts) ----------
 
@@ -50,9 +51,28 @@ function readJsonFile(file) {
   try { return JSON.parse(t); } catch { return null; }
 }
 
+function appendJsonlFile(file, row) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, JSON.stringify(row) + '\n');
+}
+
+function runEventsFile(wsDir) {
+  return path.join(wsDir, '_bench', 'run-events.jsonl');
+}
+
+function recordRunEvent(wsDir, row) {
+  appendJsonlFile(runEventsFile(wsDir), {
+    at: new Date().toISOString(),
+    ...row,
+  });
+}
+
 // Group bench-log rows (one per candidate) into newest-first run cards.
 function journalRuns(wsDir) {
   const rows = readJsonlFile(path.join(wsDir, '_metrics', 'bench-log.jsonl'));
+  const events = readJsonlFile(runEventsFile(wsDir))
+    .filter(e => e && e.run_id)
+    .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
   const byRun = new Map();
   for (const row of rows) {
     const id = row && row.run_id;
@@ -91,6 +111,7 @@ function journalRuns(wsDir) {
         n: c.n,
         errors: c.errors,
         judge_overall_mean: c.judge_overall_mean,
+        latency_ms_mean: typeof c.latency_ms_mean === 'number' ? c.latency_ms_mean : null,
         metrics: c.metrics,
         winner: Boolean(c.winner),
       })),
@@ -107,6 +128,7 @@ function journalRuns(wsDir) {
   }
   return {
     runs,
+    events,
     notebooks: [...notebookSet].sort(),
     models: [...modelSet].sort(),
   };
@@ -151,7 +173,66 @@ function journalRunDetail(wsDir, nb, runId) {
   };
 }
 
+// Flow-canvas node positions — the only layout write, under _bench/layout/.
+function layoutFile(wsDir, nb) {
+  const nbSlug = slugId(nb);
+  if (!nbSlug) throw new Error('invalid notebook name');
+  const dir = path.join(wsDir, '_bench', 'layout');
+  const file = safePath(dir, `${nbSlug}.json`);
+  if (!file) throw new Error('invalid layout path');
+  return file;
+}
+
+function readLayout(wsDir, nb) {
+  const file = layoutFile(wsDir, nb);
+  const data = readJsonFile(file);
+  if (!data || !data.positions || typeof data.positions !== 'object') return { layout: null };
+  return {
+    layout: {
+      positions: data.positions,
+      updated_at: data.updated_at || null,
+    },
+  };
+}
+
+function writeLayout(wsDir, nb, layout) {
+  const file = layoutFile(wsDir, nb);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const raw = (layout && layout.positions) || {};
+  const clean = {};
+  if (raw && typeof raw === 'object') {
+    for (const [id, pos] of Object.entries(raw)) {
+      const cid = slugId(id);
+      if (!cid || !pos || typeof pos !== 'object') continue;
+      const x = Number(pos.x), y = Number(pos.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      clean[cid] = { x: Math.round(x), y: Math.round(y) };
+    }
+  }
+  const updated_at = new Date().toISOString();
+  fs.writeFileSync(file, JSON.stringify({ positions: clean, updated_at }, null, 2) + '\n');
+  return { layout: { positions: clean, updated_at } };
+}
+
+function resetLayout(wsDir, nb) {
+  const file = layoutFile(wsDir, nb);
+  try { fs.unlinkSync(file); } catch { /* already absent */ }
+  return { layout: null };
+}
+
 const providers = createProviders();
+const activeRuns = new Map();
+let runSeq = 0;
+
+function nextRunId() {
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 17);
+  return `run-${stamp}-${++runSeq}`;
+}
+
+function requestRunId(v) {
+  const id = slugId(v) || nextRunId();
+  return id.startsWith('run-') ? id : `run-${id}`;
+}
 
 // ---------- workspaces ----------
 
@@ -245,7 +326,10 @@ const server = http.createServer((req, res) => {
         workspaces: listWorkspaces().map(w => ({ name: w.name, example: w.example })),
         providers: providers.status(),
         cell_types: CELL_TYPES,
+        notebook_templates: listTemplates(),
       });
+    } else if (u.pathname === '/api/templates') {
+      json(res, 200, { templates: listTemplates() });
     } else if (u.pathname === '/api/notebooks') {
       const bench = benchFor(q('ws'));
       json(res, 200, { notebooks: bench.listNotebooks(), goldens: bench.listGoldenSets() });
@@ -261,6 +345,9 @@ const server = http.createServer((req, res) => {
     } else if (u.pathname === '/api/journal/run') {
       // one run's summary + per-row results.jsonl
       json(res, 200, journalRunDetail(workspace(q('ws')).dir, q('nb'), q('run')));
+    } else if (u.pathname === '/api/layout') {
+      // flow-canvas node positions for one notebook (missing file → empty)
+      json(res, 200, readLayout(workspace(q('ws')).dir, q('nb')));
     } else if (u.pathname.startsWith('/api/')) {
       // the API namespace always speaks JSON — the client parses every response
       json(res, 404, { error: `not found: ${u.pathname}` });
@@ -281,24 +368,76 @@ function handlePost(pathname, body, res) {
     switch (pathname) {
       // run one cell (reactive: stale ancestors first) or the whole notebook
       case '/api/run': {
-        const bench = benchFor(body.ws);
+        const ws = workspace(body.ws);
+        const bench = createBench({ wsDir: ws.dir, providers });
+        const runId = requestRunId(body.run_id);
+        const token = { cancelled: false, started_at: new Date().toISOString() };
+        activeRuns.set(runId, token);
         const p = body.cell
-          ? bench.runCell(body.nb, body.cell, { force: Boolean(body.force) })
-          : bench.runAll(body.nb, { force: Boolean(body.force) });
-        return p.then(r => done({ ran: r.ran, notebook: r.notebook })).catch(failWith);
+          ? bench.runCell(body.nb, body.cell, { force: Boolean(body.force), cancelToken: token })
+          : bench.runAll(body.nb, { force: Boolean(body.force), cancelToken: token });
+        return p.then(r => {
+            recordRunEvent(ws.dir, { run_id: runId, notebook: body.nb, cell: body.cell || null, status: 'passed', ran: r.ran });
+            return done({ run_id: runId, status: 'passed', ran: r.ran, notebook: r.notebook });
+          })
+          .catch(e => {
+            if (e && e.code === 'RUN_CANCELLED') {
+              recordRunEvent(ws.dir, { run_id: runId, notebook: body.nb, cell: body.cell || null, status: 'cancelled', ran: e.ran || [] });
+              return done({
+                run_id: runId,
+                status: 'cancelled',
+                ran: e.ran || [],
+                notebook: bench.readNotebook(body.nb),
+              });
+            }
+            recordRunEvent(ws.dir, { run_id: runId, notebook: body.nb, cell: body.cell || null, status: 'error', error: String(e && e.message || e) });
+            return failWith(e);
+          })
+          .finally(() => activeRuns.delete(runId));
       }
 
-      // create a notebook (empty skeleton or the demo)
+      case '/api/run-cancel': {
+        const runId = String(body.run_id || '');
+        const token = activeRuns.get(runId);
+        if (!token) return failWith(new Error(`run not active: ${runId || '(missing)'}`));
+        token.cancelled = true;
+        token.cancelled_at = new Date().toISOString();
+        return done({ run_id: runId, status: 'cancelling' });
+      }
+
+      // create a notebook (empty skeleton, demo, or catalogue template)
       case '/api/notebook-create': {
         const bench = benchFor(body.ws);
         if (body.demo) {
           const r = scaffoldDemo(workspace(body.ws).dir);
           return done({ name: r.name });
         }
+        if (body.template) {
+          const r = scaffoldTemplate(workspace(body.ws).dir, String(body.template), {
+            name: body.name ? slugId(body.name) : undefined,
+            title: body.title,
+          });
+          if (body.notes != null && String(body.notes).trim()) {
+            editNotebook(bench, r.name, nb => { nb.meta.notes = String(body.notes).trim(); });
+          }
+          return done({ name: r.name, template: r.template, live: r.live });
+        }
         const name = slugId(body.name);
         if (!name) return failWith(new Error('notebook name must be a lowercase slug'));
         if (fs.existsSync(bench.notebookPath(name))) return failWith(new Error(`notebook "${name}" already exists`));
-        bench.writeNotebookFile(name, `---\nnotebook: ${name}\ntitle: "${(body.title || name).replace(/"/g, "'")}"\n---\n\nA new bench notebook. Add cells to get going.\n`);
+        if (body.copy_from) {
+          const source = slugId(body.copy_from);
+          if (!source) return failWith(new Error('source notebook must be a lowercase slug'));
+          const nb2 = bench.readNotebookFile(source);
+          nb2.meta = { ...(nb2.meta || {}), notebook: name, title: String(body.title || name) };
+          if (body.notes != null && String(body.notes).trim()) nb2.meta.notes = String(body.notes).trim();
+          else delete nb2.meta.notes;
+          bench.writeNotebookFile(name, serializeNotebook(nb2));
+          return done({ name, copied_from: source });
+        }
+        const notes = body.notes != null && String(body.notes).trim()
+          ? `notes: ${JSON.stringify(String(body.notes).trim())}\n` : '';
+        bench.writeNotebookFile(name, `---\nnotebook: ${name}\ntitle: "${(body.title || name).replace(/"/g, "'")}"\n${notes}---\n\nA new bench notebook. Add cells to get going.\n`);
         return done({ name });
       }
 
@@ -342,6 +481,80 @@ function handlePost(pathname, body, res) {
         });
         return done({ notebook: nb2 });
       }
+      case '/api/cell-config': {
+        const bench = benchFor(body.ws);
+        const nb2 = editNotebook(bench, body.nb, nb => {
+          const cell = nb.cells.find(c => c.id === body.id);
+          if (!cell) throw new Error(`no cell "${body.id}"`);
+          if (cell.type === 'note') throw new Error('note cells use text editing');
+          const updates = body.updates && typeof body.updates === 'object' ? body.updates : {};
+          const next = { ...(cell.config || {}) };
+          for (const [key, value] of Object.entries(updates)) {
+            if (value === '' || value == null) delete next[key];
+            else next[key] = normalizeConfigValue(cell.type, key, value);
+          }
+          cell.config = next;
+          delete cell.raw;
+        });
+        return done({ notebook: nb2 });
+      }
+      case '/api/cell-duplicate': {
+        const bench = benchFor(body.ws);
+        let newId = '';
+        const nb2 = editNotebook(bench, body.nb, nb => {
+          const i = nb.cells.findIndex(c => c.id === body.id);
+          if (i < 0) throw new Error(`no cell "${body.id}"`);
+          const src = nb.cells[i];
+          if (src.type === 'note') {
+            const copy = { id: `note-new-${Date.now() % 1e6}`, type: 'note', text: src.text || '' };
+            nb.cells.splice(i + 1, 0, copy);
+            newId = copy.id;
+            return;
+          }
+          newId = slugId(body.new_id) || nextCellId(nb.cells, src.type);
+          const copy = {
+            id: newId,
+            type: src.type,
+            config: JSON.parse(JSON.stringify(src.config || {})),
+          };
+          nb.cells.splice(i + 1, 0, copy);
+        });
+        return done({ notebook: nb2, id: newId });
+      }
+      case '/api/cell-connect': {
+        const bench = benchFor(body.ws);
+        const nb2 = editNotebook(bench, body.nb, nb => {
+          const from = nb.cells.find(c => c.id === body.from);
+          const to = nb.cells.find(c => c.id === body.to);
+          if (!from) throw new Error(`no source cell "${body.from}"`);
+          if (!to) throw new Error(`no target cell "${body.to}"`);
+          if (to.type === 'note') throw new Error('cannot connect into a note');
+          connectCells(from, to, body.field);
+        });
+        return done({ notebook: nb2 });
+      }
+
+      // update notebook frontmatter — allowlisted keys only (title, goal).
+      // Same parse → mutate meta → serialize path as every cell edit; the
+      // notebook name is slug-guarded inside editNotebook via notebookPath.
+      case '/api/notebook-meta': {
+        const bench = benchFor(body.ws);
+        const updates = body.updates && typeof body.updates === 'object' ? body.updates : {};
+        const allowed = ['title', 'goal'];
+        for (const key of Object.keys(updates)) {
+          if (!allowed.includes(key)) return failWith(new Error(`meta key "${key}" is not editable (allowed: ${allowed.join(', ')})`));
+        }
+        const nb2 = editNotebook(bench, body.nb, nb => {
+          nb.meta = nb.meta || {};
+          for (const key of allowed) {
+            if (!(key in updates)) continue;
+            const value = updates[key];
+            if (value == null || String(value).trim() === '') delete nb.meta[key];
+            else nb.meta[key] = String(value).trim();
+          }
+        });
+        return done({ notebook: nb2 });
+      }
 
       // record one human label for one item (append-only)
       case '/api/annotate': {
@@ -364,6 +577,14 @@ function handlePost(pathname, body, res) {
         return done({ row: bench.addGoldenRow(body.set, body.fields) });
       }
 
+      // persist / clear flow-canvas node positions under _bench/layout/
+      case '/api/layout': {
+        const wsDir = workspace(body.ws).dir;
+        if (body.reset) return done(resetLayout(wsDir, body.nb));
+        const layout = body.layout || { positions: body.positions || {} };
+        return done(writeLayout(wsDir, body.nb, layout));
+      }
+
       default:
         return json(res, 404, { error: 'unknown action' });
     }
@@ -379,6 +600,73 @@ function nextCellId(cells, type) {
     const id = i === 1 ? type : `${type}-${i}`;
     if (!used.has(id)) return id;
   }
+}
+
+function normalizeConfigValue(type, key, value) {
+  if (['candidates', 'metrics', 'judges', 'labels', 'dimensions', 'needs'].includes(key)) {
+    return Array.isArray(value) ? value.map(String).filter(Boolean) : splitList(value);
+  }
+  if (['count', 'limit', 'max_turns', 'attempts', 'scale', 'threshold'].includes(key)) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : value;
+  }
+  if (type === 'switch' && key === 'cases') return Array.isArray(value) ? value : [];
+  return value;
+}
+
+function splitList(value) {
+  return String(value || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function connectCells(from, to, requestedField) {
+  const field = requestedField && allowedRefField(to.type, requestedField)
+    ? requestedField
+    : defaultRefField(from, to);
+  if (!field) throw new Error(`no connectable ref field for ${from.type} -> ${to.type}`);
+  const cfg = { ...(to.config || {}) };
+  if (['candidates', 'metrics', 'judges', 'needs'].includes(field)) {
+    const list = Array.isArray(cfg[field]) ? cfg[field].map(String) : splitList(cfg[field]);
+    if (!list.includes(from.id)) list.push(from.id);
+    cfg[field] = list;
+  } else {
+    cfg[field] = from.id;
+  }
+  to.config = cfg;
+  delete to.raw;
+}
+
+function allowedRefField(type, field) {
+  return (REF_FIELDS[type] || []).some(f => f === field && !f.includes('.'));
+}
+
+function defaultRefField(from, to) {
+  if (to.type === 'prompt' && from.type === 'data') return 'data';
+  if (to.type === 'agent') {
+    if (from.type === 'prompt') return 'prompt';
+    if (from.type === 'data' || ['map', 'switch', 'catch', 'retry'].includes(from.type)) return 'data';
+    return 'needs';
+  }
+  if (to.type === 'golden' && from.type === 'data') return 'seed_data';
+  if (to.type === 'eval') {
+    if (from.type === 'data' || ['map', 'switch', 'catch', 'retry'].includes(from.type)) return 'data';
+    if (from.type === 'agent') return 'candidates';
+    if (from.type === 'metric') return 'metrics';
+    if (from.type === 'judge') return 'judges';
+    return 'needs';
+  }
+  if (to.type === 'annotate') {
+    if (from.type === 'golden') return 'golden';
+    if (from.type === 'eval') return 'source';
+    return 'needs';
+  }
+  if (to.type === 'switch') return 'input';
+  if (to.type === 'map') return 'input';
+  if (to.type === 'retry') return 'target';
+  if (to.type === 'catch') return to.config && to.config.try ? 'fallback' : 'try';
+  return allowedRefField(to.type, 'needs') ? 'needs' : '';
 }
 
 server.listen(PORT, '127.0.0.1', () => {

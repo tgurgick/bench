@@ -19,6 +19,7 @@
 const path = require('path');
 const { createBench } = require('../lib/engine');
 const { scaffoldDemo, DEMO_NAME } = require('../lib/demo');
+const { listTemplates, scaffoldTemplate } = require('../lib/templates');
 
 function out(s) { process.stdout.write(s + '\n'); }
 function fail(msg) { process.stderr.write('bench: ' + msg + '\n'); process.exit(1); }
@@ -26,13 +27,14 @@ function fail(msg) { process.stderr.write('bench: ' + msg + '\n'); process.exit(
 // split flags from positionals; only the flags above exist
 function parseArgs(argv) {
   const pos = [];
-  const flags = { dir: process.cwd(), force: false, open: false, port: null };
+  const flags = { dir: process.cwd(), force: false, open: false, port: null, name: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--dir') flags.dir = argv[++i] || flags.dir;
     else if (a === '--force') flags.force = true;
     else if (a === '--open') flags.open = true;
     else if (a === '--port') flags.port = argv[++i];
+    else if (a === '--name') flags.name = argv[++i] || null;
     else if (a.startsWith('--')) fail(`unknown flag "${a}"`);
     else pos.push(a);
   }
@@ -45,15 +47,19 @@ function usage(stream) {
   w('bench — benchmark models and run experiments in a reactive notebook');
   w('');
   w('Usage:');
-  w('  bench demo  [--dir <d>]                        Scaffold the demo notebook');
-  w('  bench list  [--dir <d>]                        List notebooks and golden sets');
-  w('  bench run   <notebook> [cell] [--force] [--dir <d>]');
+  w('  bench demo      [--dir <d>]                    Scaffold the model-compare demo');
+  w('  bench templates [--dir <d>]                    List starter notebook templates');
+  w('  bench scaffold  <template> [--name <slug>] [--dir <d>]');
+  w('                                                 Copy a template into _bench/');
+  w('  bench list      [--dir <d>]                    List notebooks and golden sets');
+  w('  bench run       <notebook> [cell] [--force] [--dir <d>]');
   w('                                                 Run stale cells headless');
-  w('  bench serve [--port <n>] [--open] [--dir <d>]  The notebook UI (default :4460)');
+  w('  bench serve     [--port <n>] [--open] [--dir <d>]');
+  w('                                                 The notebook UI (default :4460)');
   w('');
   w('The working directory (or --dir) is the workspace: notebooks in _bench/,');
-  w('logs in _metrics/. Everything runs offline on the fixture provider;');
-  w('set ANTHROPIC_API_KEY / OPENAI_API_KEY / BENCH_OPENAI_BASE_URL for real models.');
+  w('logs in _metrics/. Offline templates use the fixture provider; live ones');
+  w('need API keys / AWS creds and are marked in `bench templates`.');
 }
 
 function main() {
@@ -62,10 +68,38 @@ function main() {
 
   switch (cmd) {
     case 'demo': {
-      const r = scaffoldDemo(flags.dir);
-      out(`notebook:  ${path.relative(flags.dir, r.file) || r.file}`);
-      out(`run it:    bench run ${DEMO_NAME}`);
-      out('open it:   bench serve --open');
+      // same clean one-line failure as `scaffold` — never a stack trace
+      try {
+        const r = scaffoldDemo(flags.dir);
+        out(`notebook:  ${path.relative(flags.dir, r.file) || r.file}`);
+        out(`run it:    bench run ${DEMO_NAME}`);
+        out('open it:   bench serve --open');
+      } catch (e) { fail(String(e && e.message || e)); }
+      return;
+    }
+
+    case 'templates': {
+      for (const t of listTemplates()) {
+        const tag = t.live ? 'LIVE' : 'offline';
+        const env = t.required_env.length ? ` · env: ${t.required_env.join(', ')}` : '';
+        out(`- ${t.id} [${tag}] — ${t.title}${env}`);
+        out(`    ${t.description}`);
+      }
+      out('\nscaffold:  bench scaffold <id> [--name <slug>]');
+      return;
+    }
+
+    case 'scaffold': {
+      const [templateId] = pos;
+      if (!templateId) fail('Usage: bench scaffold <template> [--name <slug>]');
+      try {
+        const r = scaffoldTemplate(flags.dir, templateId, flags.name ? { name: flags.name } : {});
+        out(`notebook:  ${path.relative(flags.dir, r.file) || r.file}`);
+        out(`template:  ${r.template}${r.live ? ' (LIVE — ships offline on fixture; flip the # live: provider to go live)' : ''}`);
+        if (r.required_env.length) out(`live env:  ${r.required_env.join(', ')}`);
+        out(`run it:    bench run ${r.name}`);
+        out('open it:   bench serve --open');
+      } catch (e) { fail(String(e && e.message || e)); }
       return;
     }
 

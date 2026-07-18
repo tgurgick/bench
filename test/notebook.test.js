@@ -5,6 +5,7 @@ const assert = require('node:assert');
 
 const {
   parseNotebook, serializeNotebook, buildGraph, downstream, runPlan, cellRefs, slugId,
+  refStrings, CELL_TYPES, BUILTIN_TOOL_NAMES,
 } = require('../lib/notebook');
 
 const SAMPLE = `---
@@ -73,6 +74,69 @@ test('regenerated cell yaml (no raw) round-trips block scalars', () => {
   const nb2 = parseNotebook(serializeNotebook(nb));
   const p = nb2.cells.find(c => c.id === 'p');
   assert.equal(p.config.template, 'Question:\n{{input}}\n\nAnswer briefly.');
+});
+
+test('quoted scalars survive two parse → serialize cycles byte-identical (meta + cell config)', () => {
+  // yamlScalar escapes \" and \\ on the way out; parseScalar must invert it,
+  // or every save cycle grows backslashes (the goal editor saves meta on each
+  // edit). Values chosen to hit the nasty orderings: quote runs, a lone
+  // backslash, and a literal backslash immediately before a quote (\\" must
+  // read as escaped-backslash + closing context, never as \ + ").
+  const values = [
+    'say "hi" twice',
+    'path "C:\\tmp"',
+    'trailing backslash \\',
+    'backslash before quote \\" here',
+  ];
+  for (const v of values) {
+    const nb = {
+      meta: { notebook: 't', goal: v },
+      cells: [{ id: 'a', type: 'data', config: { rows: [], label: v } }],
+    };
+    const text1 = serializeNotebook(nb);
+    const p1 = parseNotebook(text1);
+    assert.equal(p1.meta.goal, v, `cycle 1 meta: ${JSON.stringify(v)}`);
+    assert.equal(p1.cells.find(c => c.id === 'a').config.label, v, `cycle 1 config: ${JSON.stringify(v)}`);
+    // cycle 2: drop raw so the cell re-serializes through yamlScalar again
+    for (const c of p1.cells) delete c.raw;
+    const text2 = serializeNotebook(p1);
+    assert.equal(text2, text1, `serialize stable after 1 cycle: ${JSON.stringify(v)}`);
+    const p2 = parseNotebook(text2);
+    assert.equal(p2.meta.goal, v, `cycle 2 meta: ${JSON.stringify(v)}`);
+    assert.equal(p2.cells.find(c => c.id === 'a').config.label, v, `cycle 2 config: ${JSON.stringify(v)}`);
+    for (const c of p2.cells) delete c.raw;
+    assert.equal(serializeNotebook(p2), text1, `serialize stable after 2 cycles: ${JSON.stringify(v)}`);
+  }
+  // a newline-holding meta value rides yamlScalar's \n escape and comes back real
+  const nb = { meta: { notebook: 't', goal: 'two\nlines' }, cells: [] };
+  const p = parseNotebook(serializeNotebook(nb));
+  assert.equal(p.meta.goal, 'two\nlines');
+});
+
+test('demo notebook: parse → serialize → parse preserves every cell, note text byte-identical', () => {
+  // Regression guard for bug-note-prose-roundtrip (reported 2026-07-17,
+  // verified non-repro 2026-07-18): the demo's six interleaved prose notes
+  // must survive the parse → serialize round trip every server-side edit
+  // rides — losing authored prose would break the file-is-truth contract.
+  const { DEMO_NOTEBOOK } = require('../lib/demo');
+  const first = parseNotebook(DEMO_NOTEBOOK);
+  assert.equal(first.errors.length, 0);
+  const notes = first.cells.filter(c => c.type === 'note');
+  assert.equal(notes.length, 6, 'the demo carries six interleaved prose notes');
+
+  const again = parseNotebook(serializeNotebook(first));
+  assert.deepEqual(
+    again.cells.map(c => [c.id, c.type]),
+    first.cells.map(c => [c.id, c.type]),
+    'cell sequence (ids, types, order) survives the round trip',
+  );
+  assert.deepEqual(
+    again.cells.filter(c => c.type === 'note').map(c => c.text),
+    notes.map(c => c.text),
+    'every note survives with byte-identical text',
+  );
+  // and the cycle is stable: serializing the re-parse changes nothing
+  assert.equal(serializeNotebook(again), serializeNotebook(first));
 });
 
 test('a tl-cell fence quoted inside an outer code block stays prose', () => {
@@ -180,6 +244,19 @@ test('graph edges come from typed ref fields only', () => {
   assert.ok(g.order.indexOf('p') < g.order.indexOf('bot'));
 });
 
+test('input_from forms agent and judge graph edges', () => {
+  const nb = parseNotebook([
+    '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ninput: "hi"\n```',
+    '```tl-cell\nid: quality\ntype: judge\nkind: code\nexpr: 1\ninput_from: draft\n```',
+    '```tl-cell\nid: revise\ntype: agent\nprovider: fixture\ninput_from: quality\ninput_path: sample\ntemplate: "{{input}}"\n```',
+  ].join('\n\n'));
+  const g = buildGraph(nb.cells);
+  assert.deepEqual(g.deps.quality, ['draft']);
+  assert.deepEqual(g.deps.revise, ['quality']);
+  assert.ok(g.order.indexOf('draft') < g.order.indexOf('quality'));
+  assert.ok(g.order.indexOf('quality') < g.order.indexOf('revise'));
+});
+
 test('cycles are detected', () => {
   const nb = parseNotebook([
     '```tl-cell\nid: a\ntype: eval\ndata: b\ncandidates: []\n```',
@@ -219,6 +296,64 @@ test('slugId accepts slugs and rejects everything else', () => {
   assert.equal(slugId(''), '');
 });
 
+// A diamond through control nodes: rows feeds two map branches, a switch
+// picks one, a retry guards an agent, a catch guards the retry's target.
+const CONTROL = [
+  '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "a"\n```',
+  '```tl-cell\nid: m1\ntype: map\ninput: rows\nexpr: "({ ...row, branch: 1 })"\n```',
+  '```tl-cell\nid: m2\ntype: map\ninput: rows\nexpr: "({ ...row, branch: 2 })"\n```',
+  '```tl-cell\nid: sw\ntype: switch\ninput: rows\ncases:\n  - when: count > 1\n    use: m1\ndefault: m2\n```',
+  '```tl-cell\nid: bot\ntype: agent\nprovider: fixture\ndata: sw\n```',
+  '```tl-cell\nid: keep\ntype: retry\ntarget: bot\n```',
+  '```tl-cell\nid: safe\ntype: catch\ntry: bot\nfallback: m2\n```',
+].join('\n\n');
+
+test('control node refs form graph edges, including refs inside switch cases', () => {
+  const nb = parseNotebook(CONTROL);
+  assert.equal(nb.errors.length, 0);
+  const g = buildGraph(nb.cells);
+  assert.deepEqual(g.deps.m1, ['rows']);
+  assert.deepEqual(g.deps.sw.sort(), ['m1', 'm2', 'rows']);
+  assert.deepEqual(g.deps.keep, ['bot']);
+  assert.deepEqual(g.deps.safe.sort(), ['bot', 'm2']);
+  assert.deepEqual(g.cycle, []);
+});
+
+test('runPlan diamond: a stale root re-runs both branches before the switch', () => {
+  const nb = parseNotebook(CONTROL);
+  const g = buildGraph(nb.cells);
+  const plan = runPlan(g, 'sw', id => id === 'rows');
+  assert.deepEqual([...plan].sort(), ['m1', 'm2', 'rows', 'sw']);
+  assert.ok(plan.indexOf('rows') < plan.indexOf('m1'));
+  assert.ok(plan.indexOf('m1') < plan.indexOf('sw'));
+  assert.ok(plan.indexOf('m2') < plan.indexOf('sw'));
+  // nothing stale: only the target runs
+  assert.deepEqual(runPlan(g, 'sw', () => false), ['sw']);
+});
+
+test('downstream from the root reaches every control node', () => {
+  const nb = parseNotebook(CONTROL);
+  const g = buildGraph(nb.cells);
+  assert.deepEqual([...downstream(g, 'rows')].sort(), ['bot', 'keep', 'm1', 'm2', 'safe', 'sw']);
+  assert.deepEqual([...downstream(g, 'bot')].sort(), ['keep', 'safe']);
+});
+
+test('regenerated switch/map/retry/catch yaml round-trips configs', () => {
+  const nb = parseNotebook(CONTROL);
+  for (const c of nb.cells) delete c.raw; // force cellYaml regeneration
+  const nb2 = parseNotebook(serializeNotebook(nb));
+  assert.equal(nb2.errors.length, 0);
+  const sw = nb2.cells.find(c => c.id === 'sw');
+  assert.deepEqual(sw.config.cases, [{ when: 'count > 1', use: 'm1' }]);
+  assert.equal(sw.config.default, 'm2');
+  assert.equal(nb2.cells.find(c => c.id === 'm1').config.expr, '({ ...row, branch: 1 })');
+  assert.equal(nb2.cells.find(c => c.id === 'keep').config.target, 'bot');
+  assert.equal(nb2.cells.find(c => c.id === 'safe').config.try, 'bot');
+  // the regenerated graph is identical
+  const g = buildGraph(nb2.cells);
+  assert.deepEqual(g.deps.sw.sort(), ['m1', 'm2', 'rows']);
+});
+
 test('optional threshold on metric/judge cells round-trips', () => {
   const text = [
     '```tl-cell',
@@ -252,4 +387,71 @@ test('optional threshold on metric/judge cells round-trips', () => {
   // notebooks without threshold stay valid
   const plain = parseNotebook(SAMPLE);
   assert.equal(plain.cells.find(c => c.id === 'bot').config.threshold, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// tool nodes — refs, graph, staleness surface, round-trip
+// ---------------------------------------------------------------------------
+
+// One tool cell feeding two agents (a diamond onto an eval), with a builtin
+// mixed into the same tools: list.
+const TOOLS = [
+  '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "a"\n```',
+  '```tl-cell\nid: shout\ntype: tool\nkind: expr\ndescription: upper-case\nexpr: String(args.input || "").toUpperCase()\nparams:\n  input:\n    type: string\n    description: text to shout\n    required: true\n```',
+  '```tl-cell\nid: a1\ntype: agent\nprovider: fixture\ndata: rows\ntools: [calc, shout]\n```',
+  '```tl-cell\nid: a2\ntype: agent\nprovider: fixture\ndata: rows\ntools: [shout]\n```',
+  '```tl-cell\nid: compare\ntype: eval\ndata: rows\ncandidates: [a1, a2]\n```',
+].join('\n\n');
+
+test('tool cells parse; tool refs form graph edges, builtin names do not', () => {
+  assert.ok(CELL_TYPES.includes('tool'));
+  assert.deepEqual(BUILTIN_TOOL_NAMES.slice().sort(), ['calc', 'lookup', 'today']);
+  const nb = parseNotebook(TOOLS);
+  assert.equal(nb.errors.length, 0);
+  const g = buildGraph(nb.cells);
+  // graph and staleness share refStrings, so builtin names must be absent
+  // from both — otherwise `tools: [calc]` would dangle forever
+  assert.deepEqual(refStrings(nb.cells.find(c => c.id === 'a1')).sort(), ['rows', 'shout']);
+  assert.deepEqual(g.deps.a1.sort(), ['rows', 'shout']);
+  assert.deepEqual(g.deps.a2.sort(), ['rows', 'shout']);
+  assert.deepEqual(g.deps.shout, []);
+  assert.deepEqual(g.cycle, []);
+  assert.ok(g.order.indexOf('shout') < g.order.indexOf('a1'));
+});
+
+test('tool diamond: a stale tool re-runs before both agents and dirties them', () => {
+  const nb = parseNotebook(TOOLS);
+  const g = buildGraph(nb.cells);
+  assert.deepEqual([...downstream(g, 'shout')].sort(), ['a1', 'a2', 'compare']);
+  const plan = runPlan(g, 'compare', id => id === 'shout');
+  assert.deepEqual([...plan].sort(), ['a1', 'a2', 'compare', 'shout']);
+  assert.ok(plan.indexOf('shout') < plan.indexOf('a1'));
+  assert.ok(plan.indexOf('shout') < plan.indexOf('a2'));
+  assert.ok(plan.indexOf('a2') < plan.indexOf('compare'));
+});
+
+test('renaming a tool cell leaves a dangling tools: ref, visible to refStrings', () => {
+  const renamed = TOOLS.replace('id: shout\ntype: tool', 'id: yell\ntype: tool');
+  const nb = parseNotebook(renamed);
+  const g = buildGraph(nb.cells);
+  // the edge is gone, but the string is still a ref candidate — exactly what
+  // the engine's dangling-ref staleness check consumes
+  assert.deepEqual(g.deps.a1, ['rows']);
+  assert.deepEqual(refStrings(nb.cells.find(c => c.id === 'a1')).sort(), ['rows', 'shout']);
+});
+
+test('tool cell yaml round-trips nested params schemas and inline tools stay non-refs', () => {
+  const nb = parseNotebook(TOOLS);
+  for (const c of nb.cells) delete c.raw; // force cellYaml regeneration
+  const nb2 = parseNotebook(serializeNotebook(nb));
+  assert.equal(nb2.errors.length, 0);
+  const tool = nb2.cells.find(c => c.id === 'shout');
+  assert.equal(tool.type, 'tool');
+  assert.equal(tool.config.kind, 'expr');
+  assert.deepEqual(tool.config.params, { input: { type: 'string', description: 'text to shout', required: true } });
+  assert.deepEqual(buildGraph(nb2.cells).deps.a1.sort(), ['rows', 'shout']);
+
+  // inline tool objects in tools: contribute no ref strings
+  const inline = parseNotebook('```tl-cell\nid: bot\ntype: agent\nprovider: fixture\ninput: hi\ntools:\n  - name: up\n    expr: String(args.input).toUpperCase()\n```');
+  assert.deepEqual(refStrings(inline.cells[0]), []);
 });

@@ -85,6 +85,12 @@ a note (as this README does above), nest it inside an outer fenced code block
 (```` ```` ````, ` ~~~ `, or a longer backtick run); the parser tracks the
 outer fence and keeps everything inside it as prose.
 
+Cell fences carry the same length discipline: a cell may open with a longer
+backtick run (` ````tl-cell `) and then closes only on a bare run at least as
+long — the escape hatch for a body that must contain a bare ` ``` ` line
+(e.g. a prompt template demonstrating code fences). The serializer picks the
+fence length automatically, so machine-written notebooks round-trip.
+
 Cells reference each other **by id** (`data: seeds`, `candidates: [concise]`);
 those references are the dependency graph. There is no separate wiring file —
 the edges are visible in the configs. Multi-line strings (templates, rubrics,
@@ -113,6 +119,7 @@ re-runs regardless.
 | `map` | Transform/filter an upstream cell's rows | `input:`, `expr:`, `filter:`, `limit:` |
 | `retry` | Ensure a target's output, re-running it on failure (bounded) | `target:`, `attempts:` (≤ 5) |
 | `catch` | The explicit error path: pass through or fall back | `try:`, `fallback: <cell>` or `rows:` inline |
+| `gate` | Evaluate an input cell → `{pass, score, rationale}`; input passes through; may carry one `loop: {back_to, max}` | `input:`, then `expr:` (+ optional `score:`) or inline judge fields + `threshold:`; optional `loop:` |
 | `tool` | A reusable tool definition agents reference by id in `tools:` | `kind: expr\|http\|file\|transform`, `params:`, plus `expr:` / `url:` / `path:` / `template:` per kind |
 
 Every type also accepts `needs: [ids]` for explicit ordering without data flow.
@@ -274,6 +281,144 @@ try: flaky-agent
 rows:
   - input: "fallback question"
 ```
+
+### Gates
+
+A `gate` cell evaluates its `input:` cell and records a verdict —
+`{pass, score, rationale, input_ref}` — spread over the input's output, so a
+gate sits mid-chain without breaking data flow (the same pass-through
+discipline as the other control nodes): downstream cells read the gated
+cell's output unchanged, plus the verdict. The gate is the evaluator half of
+evaluator–optimizer — the anchor a loop-back edge attaches to — and useful
+alone as a checkpoint. Two kinds:
+
+**`expr:`** — one expression over `{output, judgment, metrics, score}` of the
+input's record, truthy → pass. `output` is the input's full output;
+`judgment` is the first judgment it carries (a judge cell's `sample`, or a
+`judgment` field); `metrics` its metrics map; `score` the judgment's overall.
+An optional `score:` expression records a number alongside the verdict
+(defaults to the upstream overall when one exists):
+
+```yaml
+id: good-enough
+type: gate
+input: quality        # a judge cell
+expr: judgment.overall >= 3.5
+score: judgment.overall
+```
+
+**Inline judge** — judge fields (`provider`, `model`, `scale`, `rubric`,
+`dimensions`) plus a required `threshold:`. The gate runs the judge against
+the input's `output` text and passes when `overall >= threshold`; the full
+judgment lands in the record (`gate.judgment`), the judge's rationale becomes
+the gate's:
+
+```yaml
+id: ship-it
+type: gate
+input: draft          # an agent cell
+provider: fixture
+scale: 5
+threshold: 3.5
+rubric: |
+  Reward clarity and brevity.
+```
+
+Errors are readable records, never crashes: a missing `input:`, a bad
+expression, or a failing judge each produce an error record naming the gate
+and the cause. An errored upstream propagates as an error (`resolve` refuses
+error records) — a gate never silently passes broken input.
+
+> **Decision note — human-approval gates are deferred by design.** v1 gate
+> kinds are `expr` and the inline judge only. "Loop until I approve" (a gate
+> that blocks on a human verdict) is intentionally not built in this pass; it
+> needs a pause/resume execution model that doesn't exist yet. The HITL
+> surfaces for now remain `annotate` cells and the golden approval flow.
+
+### Loop-back edges (evaluator–optimizer)
+
+A gate can carry one **loop-back** — the guarded backward flow that makes
+"iterate until it's good" first-class:
+
+```yaml
+loop:
+  back_to: draft     # an ancestor of the gate
+  max: 3             # total passes, hard cap 5 (non-overridable)
+```
+
+While the gate **fails** and passes remain, the *span* — every cell on a path
+from `back_to` to the gate (diamond-safe) — re-executes, and the gate's
+critique from the previous pass is injected into the span's template scope:
+
+| Binding | Value |
+|---------|-------|
+| `{{feedback.score}}` | the previous pass's gate score |
+| `{{feedback.rationale}}` | the previous pass's rationale (a judge gate's critique) |
+| `{{previous.output}}` | the span tail's previous output text |
+
+On pass 1 the bindings are absent and render as empty strings, so one
+template serves every pass. The gate's expression scope also gains `pass`
+(the current pass number) and `feedback` (the previous verdict object, `null`
+on pass 1) — which is exactly what makes deterministic offline fixtures
+possible: `expr: feedback != null` *always* fails pass 1 and passes pass 2.
+
+A fixture-runnable example (no keys, no network):
+
+````markdown
+```tl-cell
+id: seeds
+type: data
+rows:
+  - input: "write a haiku about autumn"
+```
+
+```tl-cell
+id: draft
+type: agent
+provider: fixture
+data: seeds
+template: |
+  {{input}}
+  Reviewer said (blank on the first pass): {{feedback.rationale}}
+  Previous attempt: {{previous.output}}
+```
+
+```tl-cell
+id: keep-going
+type: gate
+input: draft
+expr: feedback != null
+loop:
+  back_to: draft
+  max: 3
+```
+````
+
+Run `keep-going`: pass 1 fails (no feedback yet), pass 2 re-renders `draft`
+with pass 1's rationale *actually in the prompt* — the engine test asserts
+this against the wire — and the gate passes.
+
+How it executes and records:
+
+- **The graph stays acyclic.** The back-edge is metadata: `back_to` counts as
+  a reference (renaming the target goes stale with a readable error) but
+  never as a dependency edge — iteration runs *inside* the gate's execution,
+  the same composite-execution precedent as `retry`'s fresh attempts.
+- **Every pass is data.** The gate's record carries
+  `loop.passes: [{n, pass, score, rationale, output}]`, the run log prints
+  one line per pass with its score, and the canvas inspector lists per-pass
+  scores. The **final** pass persists per-cell as a normal record, so
+  downstream cells consume it exactly like any other run.
+- **Guards, all readable errors:** `max` is an integer 1–5 (the cap is not
+  overridable), `back_to` must name a live ancestor of the gate, one
+  loop-back per notebook (v1), and the span may not contain another gate
+  (v1) — gate verdicts shadow on pass-through, which would make *which*
+  critique feeds the loop ambiguous.
+
+On the flow canvas the loop-back renders as a solid amber backward arc
+labeled "until pass · max N", and drawing one is a gesture: drag a gate's
+connector onto an *earlier* node (formerly the cycle-error path) and the
+canvas offers "make loop-back" with a max-passes input.
 
 ### Tool nodes
 
@@ -462,6 +607,7 @@ open it, edit it.
 | `model-compare` | The full tour: dataset → two candidates → metrics → LLM judge → eval grid → annotation → gated golden set (the demo notebook) |
 | `tool-agent` | A tool-using agent vs a no-tools baseline, with a trace-aware `expr` metric scoring whether the tool was used |
 | `agent-chain` | A draft → revise multi-agent pass ordered with `needs:`, judged side by side in one eval |
+| `self-refine` | Draft → revise → gate with feedback looping back for a capped refine pass |
 | `judge-calibration` | An eval plus the `annotate` queue that computes judge agreement — the number to check before trusting a judge unsupervised |
 | `live-compare` | Anthropic vs any OpenAI-compatible endpoint, head to head *(live)* |
 | `bedrock-smoke` | A one-call Amazon Bedrock credential and SigV4 check *(live)* |

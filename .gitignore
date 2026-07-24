@@ -6,3 +6,7 @@
 # noise
 .DS_Store
 node_modules/
+
+# workspace artifacts if the server/CLI runs with cwd = repo root — never source
+_bench/
+_metrics/

@@ -187,6 +187,82 @@ test('a bare top-level tl-cell fence is always a genuine cell opener', () => {
   assert.deepEqual(nb.cells.map(c => c.type), ['note', 'unknown', 'note']);
 });
 
+test('fence-length discipline: a four-backtick cell shields a bare ``` line in its body', () => {
+  // the fence-inside-cell-body thread repro: a bare ``` line inside a tl-cell
+  // body used to end the cell early. Opening with a longer run (````tl-cell)
+  // is the escape hatch — the cell closes only on an equal-or-longer bare run.
+  const text = [
+    '````tl-cell',
+    'id: p',
+    'type: prompt',
+    'template: |',
+    '  Fences look like:',
+    '```',
+    'data: x',
+    '````',
+    '',
+  ].join('\n');
+  const nb = parseNotebook(text);
+  assert.equal(nb.errors.length, 0);
+  assert.deepEqual(nb.cells.map(c => [c.id, c.type]), [['p', 'prompt']]);
+  assert.equal(nb.cells[0].config.data, 'x');
+  assert.ok(nb.cells[0].raw.split('\n').includes('```'), 'the bare ``` line stays in the body');
+});
+
+test('fence-length discipline: an equal-or-longer bare run closes the cell', () => {
+  // five backticks close a four-backtick cell (CommonMark rule, mirrored from prose)
+  const nb = parseNotebook('````tl-cell\nid: a\ntype: data\nrows: []\n`````\n');
+  assert.equal(nb.errors.length, 0);
+  assert.deepEqual(nb.cells.map(c => [c.id, c.type]), [['a', 'data']]);
+});
+
+test('default three-backtick cells parse exactly as before', () => {
+  const nb = parseNotebook(SAMPLE);
+  assert.deepEqual(nb.cells.map(c => c.id), ['note-1', 'rows', 'p', 'bot']);
+  assert.equal(nb.errors.length, 0);
+});
+
+test('a quoted ````tl-cell inside a longer outer prose fence stays prose', () => {
+  const nb = parseNotebook('`````\n````tl-cell\nid: fake\n````\n`````\n');
+  assert.deepEqual(nb.cells.map(c => c.type), ['note']);
+  assert.equal(nb.errors.length, 0);
+});
+
+test('serializer emits a longer opening fence when the body holds a bare ``` line', () => {
+  const text = [
+    '````tl-cell',
+    'id: p',
+    'type: prompt',
+    'template: |',
+    '  Fences look like:',
+    '```',
+    'data: x',
+    '````',
+    '',
+  ].join('\n');
+  const nb = parseNotebook(text);
+  const text2 = serializeNotebook(nb);
+  assert.match(text2, /^````tl-cell$/m, 'opening fence outruns the bare ``` in the body');
+  const nb2 = parseNotebook(text2);
+  assert.equal(nb2.errors.length, 0);
+  assert.deepEqual(
+    nb2.cells.map(c => [c.id, c.type, c.config]),
+    nb.cells.map(c => [c.id, c.type, c.config]),
+  );
+  // stable: a second cycle changes nothing
+  assert.equal(serializeNotebook(nb2), text2);
+});
+
+test('serializer fence outruns even a four-backtick bare run in the body', () => {
+  const raw = 'id: a\ntype: data\nrows: []\n````';
+  const nb = { meta: {}, cells: [{ id: 'a', type: 'data', config: { rows: [] }, raw }] };
+  const text = serializeNotebook(nb);
+  assert.match(text, /^`````tl-cell$/m);
+  const nb2 = parseNotebook(text);
+  assert.equal(nb2.errors.length, 0);
+  assert.deepEqual(nb2.cells.map(c => [c.id, c.type]), [['a', 'data']]);
+});
+
 test('block scalars indented with a single space do not truncate', () => {
   const nb = parseNotebook([
     '```tl-cell',
@@ -454,4 +530,158 @@ test('tool cell yaml round-trips nested params schemas and inline tools stay non
   // inline tool objects in tools: contribute no ref strings
   const inline = parseNotebook('```tl-cell\nid: bot\ntype: agent\nprovider: fixture\ninput: hi\ntools:\n  - name: up\n    expr: String(args.input).toUpperCase()\n```');
   assert.deepEqual(refStrings(inline.cells[0]), []);
+});
+
+// ---------------------------------------------------------------------------
+// gate cells — refs, diamond, rename, round-trip
+// ---------------------------------------------------------------------------
+
+// A diamond onto a gate: rows feeds an agent and a judge; the gate evaluates
+// the judge's record; a downstream agent consumes the gate (pass-through).
+const GATED = [
+  '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "a"\n```',
+  '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: rows\n```',
+  '```tl-cell\nid: quality\ntype: judge\nprovider: fixture\ninput_from: draft\nscale: 5\n```',
+  '```tl-cell\nid: good\ntype: gate\ninput: quality\nexpr: judgment.overall >= 3\nscore: judgment.overall\n```',
+  '```tl-cell\nid: publish\ntype: agent\nprovider: fixture\ninput_from: good\n```',
+].join('\n\n');
+
+test('gate cells parse; input forms a graph edge and the diamond orders correctly', () => {
+  assert.ok(CELL_TYPES.includes('gate'));
+  const nb = parseNotebook(GATED);
+  assert.equal(nb.errors.length, 0);
+  const g = buildGraph(nb.cells);
+  assert.deepEqual(refStrings(nb.cells.find(c => c.id === 'good')), ['quality']);
+  assert.deepEqual(g.deps.good, ['quality']);
+  assert.deepEqual(g.deps.publish, ['good']);
+  assert.deepEqual(g.cycle, []);
+  // stale root re-runs the whole diamond before the gate, gate before publish
+  const plan = runPlan(g, 'publish', id => id === 'rows');
+  assert.deepEqual([...plan].sort(), ['draft', 'good', 'publish', 'quality', 'rows']);
+  assert.ok(plan.indexOf('rows') < plan.indexOf('draft'));
+  assert.ok(plan.indexOf('draft') < plan.indexOf('quality'));
+  assert.ok(plan.indexOf('quality') < plan.indexOf('good'));
+  assert.ok(plan.indexOf('good') < plan.indexOf('publish'));
+  // editing the gate's input dirties the gate and everything past it
+  assert.deepEqual([...downstream(g, 'quality')].sort(), ['good', 'publish']);
+  assert.deepEqual([...downstream(g, 'rows')].sort(), ['draft', 'good', 'publish', 'quality']);
+});
+
+test('renaming a gate input leaves a dangling ref visible to refStrings', () => {
+  const renamed = GATED.replace('id: quality\ntype: judge', 'id: verdict\ntype: judge');
+  const nb = parseNotebook(renamed);
+  const g = buildGraph(nb.cells);
+  // the edge is gone, but the string stays a ref candidate — exactly what the
+  // engine's dangling-ref staleness check consumes (graph/staleness lockstep)
+  assert.deepEqual(g.deps.good, []);
+  assert.deepEqual(refStrings(nb.cells.find(c => c.id === 'good')), ['quality']);
+});
+
+test('regenerated gate yaml round-trips expr and inline-judge configs', () => {
+  const both = GATED + '\n\n' + [
+    '```tl-cell',
+    'id: strict',
+    'type: gate',
+    'input: draft',
+    'provider: fixture',
+    'scale: 5',
+    'threshold: 3.5',
+    'dimensions: [helpfulness]',
+    'rubric: |',
+    '  Reward brevity.',
+    '```',
+  ].join('\n');
+  const nb = parseNotebook(both);
+  assert.equal(nb.errors.length, 0);
+  for (const c of nb.cells) delete c.raw; // force cellYaml regeneration
+  const nb2 = parseNotebook(serializeNotebook(nb));
+  assert.equal(nb2.errors.length, 0);
+  const expr = nb2.cells.find(c => c.id === 'good');
+  assert.equal(expr.config.expr, 'judgment.overall >= 3');
+  assert.equal(expr.config.score, 'judgment.overall');
+  const strict = nb2.cells.find(c => c.id === 'strict');
+  assert.equal(strict.config.threshold, 3.5);
+  assert.equal(strict.config.rubric, 'Reward brevity.');
+  assert.deepEqual(strict.config.dimensions, ['helpfulness']);
+  // the regenerated graph is identical
+  const g = buildGraph(nb2.cells);
+  assert.deepEqual(g.deps.good, ['quality']);
+  assert.deepEqual(g.deps.strict, ['draft']);
+});
+
+// ---------------------------------------------------------------------------
+// loop-back edges (gate `loop: {back_to, max}` — metadata, not dependencies)
+// ---------------------------------------------------------------------------
+
+const LOOPED = [
+  '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "a"\n```',
+  '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: rows\n```',
+  '```tl-cell\nid: revise\ntype: agent\nprovider: fixture\ninput_from: draft\n```',
+  '```tl-cell\nid: check\ntype: gate\ninput: revise\nexpr: feedback != null\nloop:\n  back_to: draft\n  max: 3\n```',
+  '```tl-cell\nid: publish\ntype: agent\nprovider: fixture\ninput_from: check\n```',
+].join('\n\n');
+
+test('loop-back is metadata: in refStrings, never a graph edge, never a cycle', () => {
+  const nb = parseNotebook(LOOPED);
+  assert.equal(nb.errors.length, 0);
+  const gate = nb.cells.find(c => c.id === 'check');
+  // refStrings carries back_to (rename → stale + readable error)…
+  assert.deepEqual(refStrings(gate), ['revise', 'draft']);
+  // …but the graph edge set does not — the back-edge is excluded from the
+  // cycle check because iteration lives inside the gate's execution
+  const g = buildGraph(nb.cells);
+  assert.deepEqual(cellRefs(gate, new Set(nb.cells.map(c => c.id))), ['revise']);
+  assert.deepEqual(g.deps.check, ['revise']);
+  assert.deepEqual(g.cycle, []);
+  // even a nonsensical back_to pointing DOWNSTREAM cannot manufacture a cycle
+  // (the engine refuses it readably as not-an-ancestor instead)
+  const misdrawn = LOOPED.replace('back_to: draft', 'back_to: publish');
+  const g2 = buildGraph(parseNotebook(misdrawn).cells);
+  assert.deepEqual(g2.cycle, []);
+  assert.deepEqual(g2.deps.check, ['revise']);
+});
+
+test('back_to that is also the input stays a single edge and a single ref', () => {
+  const tight = [
+    '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "a"\n```',
+    '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: rows\n```',
+    '```tl-cell\nid: check\ntype: gate\ninput: draft\nexpr: feedback != null\nloop:\n  back_to: draft\n  max: 2\n```',
+  ].join('\n\n');
+  const nb = parseNotebook(tight);
+  assert.equal(nb.errors.length, 0);
+  const gate = nb.cells.find(c => c.id === 'check');
+  assert.deepEqual(refStrings(gate), ['draft']);
+  const g = buildGraph(nb.cells);
+  assert.deepEqual(g.deps.check, ['draft']);   // the input edge survives
+  assert.deepEqual(g.cycle, []);
+});
+
+test('renaming the back_to target leaves a dangling ref visible to refStrings', () => {
+  const renamed = LOOPED.replace('id: draft\ntype: agent', 'id: sketch\ntype: agent');
+  const nb = parseNotebook(renamed);
+  const gate = nb.cells.find(c => c.id === 'check');
+  // draft is gone: input_from on revise dangles AND the gate's back_to dangles
+  assert.ok(refStrings(gate).includes('draft'));
+  assert.deepEqual(buildGraph(nb.cells).deps.check, ['revise']);
+});
+
+test('loop config round-trips through regenerated yaml', () => {
+  const nb = parseNotebook(LOOPED);
+  for (const c of nb.cells) delete c.raw; // force cellYaml regeneration
+  const nb2 = parseNotebook(serializeNotebook(nb));
+  assert.equal(nb2.errors.length, 0);
+  const gate = nb2.cells.find(c => c.id === 'check');
+  assert.deepEqual(gate.config.loop, { back_to: 'draft', max: 3 });
+  assert.equal(gate.config.expr, 'feedback != null');
+  const g = buildGraph(nb2.cells);
+  assert.deepEqual(g.deps.check, ['revise']);
+  assert.deepEqual(g.cycle, []);
+});
+
+test('loop: on a non-gate cell is a readable parse error', () => {
+  const bad = '```tl-cell\nid: bot\ntype: agent\nprovider: fixture\ninput: "hi"\nloop:\n  back_to: bot\n  max: 2\n```';
+  const nb = parseNotebook(bad);
+  assert.equal(nb.errors.length, 1);
+  assert.match(nb.cells[0].error, /loop: is only valid on a gate cell/);
+  assert.match(nb.cells[0].error, /agent cell cannot carry a loop-back/);
 });

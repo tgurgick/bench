@@ -23,7 +23,7 @@ describe('template gallery', () => {
     const ids = list.map(t => t.id);
     for (const id of [
       'model-compare', 'tool-agent', 'agent-chain',
-      'judge-calibration', 'live-compare', 'bedrock-smoke', 'gemini-smoke',
+      'self-refine', 'judge-calibration', 'live-compare', 'bedrock-smoke', 'gemini-smoke',
     ]) assert.ok(ids.includes(id), `missing ${id}`);
     assert.equal(list.find(t => t.id === 'model-compare').live, false);
     assert.equal(list.find(t => t.id === 'live-compare').live, true);
@@ -75,12 +75,32 @@ describe('template gallery', () => {
     }
   });
 
+  it('agent-chain hands the draft output to revise instead of only ordering it', () => {
+    const nb = parseNotebook(getTemplate('agent-chain').body);
+    const revise = nb.cells.find(c => c.id === 'revise');
+    assert.ok(revise, 'agent-chain includes the revise agent');
+    assert.equal(revise.config.input_from, 'draft');
+    assert.equal(revise.config.input_path, 'output');
+    assert.ok(!('needs' in revise.config), 'input_from supplies the graph dependency');
+    const prompt = nb.cells.find(c => c.id === 'revise-prompt');
+    assert.match(prompt.config.template, /Draft reply to improve:/);
+  });
+
+  it('self-refine carries real feedback through a capped loop-back', () => {
+    const nb = parseNotebook(getTemplate('self-refine').body);
+    const revise = nb.cells.find(c => c.id === 'revise');
+    const gate = nb.cells.find(c => c.id === 'quality-gate');
+    assert.match(revise.config.template, /{{feedback\.rationale}}/);
+    assert.deepEqual(gate.config.loop, { back_to: 'draft', max: 3 });
+    assert.match(getTemplate('self-refine').body, /internal self-critique/i);
+  });
+
   it('every template runs end-to-end on the fixture provider', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bench-tpl-run-'));
     try {
       for (const id of [
         'model-compare', 'tool-agent', 'agent-chain',
-        'judge-calibration', 'live-compare', 'bedrock-smoke', 'gemini-smoke',
+        'self-refine', 'judge-calibration', 'live-compare', 'bedrock-smoke', 'gemini-smoke',
       ]) {
         const r = scaffoldTemplate(dir, id, { name: id + '-run' });
         const bench = createBench({ wsDir: dir, providers: createProviders() });

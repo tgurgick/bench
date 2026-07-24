@@ -850,3 +850,407 @@ test('eval candidates use tool nodes per row and record tool provenance', async 
     assert.equal(t.tool_cell, 'shout');
   }
 });
+
+// ---------------------------------------------------------------------------
+// gate cells — evaluate, decide, record pass/fail with rationale
+// ---------------------------------------------------------------------------
+
+test('expr gate evaluates an upstream judgment and passes the record through', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  bench.writeNotebookFile('gt', [
+    '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "hello"\n```',
+    '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: rows\n```',
+    '```tl-cell\nid: quality\ntype: judge\nprovider: fixture\ninput_from: draft\nscale: 5\n```',
+    '```tl-cell\nid: good\ntype: gate\ninput: quality\nexpr: judgment.overall >= 1\nscore: judgment.overall\n```',
+    '```tl-cell\nid: never\ntype: gate\ninput: quality\nexpr: judgment.overall > 5\n```',
+  ].join('\n\n'));
+  const r = await bench.runAll('gt');
+  assert.equal(r.notebook.state.good.error, null);
+  const judged = r.notebook.state.quality.output.sample;
+  const out = r.notebook.state.good.output;
+  // verdict: fixture overall is always within 1..scale, so this gate passes
+  assert.equal(out.pass, true);
+  assert.equal(out.score, judged.overall);
+  assert.match(out.rationale, /expr gate: judgment\.overall >= 1 → pass/);
+  assert.equal(out.input_ref, 'quality');
+  assert.deepEqual(out.gate, { kind: 'expr', expr: 'judgment.overall >= 1' });
+  // pass-through: the judge's own output fields arrive unchanged
+  assert.equal(out.kind, 'llm');
+  assert.deepEqual(out.sample, judged);
+  // and a threshold above the scale fails, with the fail spelled out
+  const never = r.notebook.state.never.output;
+  assert.equal(never.pass, false);
+  assert.equal(never.score, judged.overall); // no score: expr → upstream overall
+  assert.match(never.rationale, /→ fail/);
+});
+
+test('a gate sits mid-chain: downstream consumes the gated output unchanged', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  bench.writeNotebookFile('gt2', [
+    '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "tiny"\n  - input: "more"\n```',
+    '```tl-cell\nid: enough\ntype: gate\ninput: rows\nexpr: output.count >= 2\n```',
+    '```tl-cell\nid: bot\ntype: agent\nprovider: fixture\ndata: enough\n```',
+  ].join('\n\n'));
+  const r = await bench.runAll('gt2');
+  const out = r.notebook.state.enough.output;
+  assert.equal(out.pass, true);
+  assert.equal(out.score, null); // nothing scored upstream, no score: expr
+  // rows pass through byte-identical; the agent downstream reads them as data
+  assert.deepEqual(out.rows, [{ input: 'tiny' }, { input: 'more' }]);
+  assert.equal(out.count, 2);
+  assert.equal(r.notebook.state.bot.error, null);
+  assert.equal(r.notebook.state.bot.output.sample_row.input, 'tiny');
+});
+
+test('inline-judge gate runs the judge and thresholds the overall', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  bench.writeNotebookFile('gt3', [
+    '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ninput: "write a poem"\n```',
+    '```tl-cell\nid: lenient\ntype: gate\ninput: draft\nprovider: fixture\nscale: 5\nthreshold: 1\ndimensions: [quality]\nrubric: |\n  Reward effort.\n```',
+    '```tl-cell\nid: strict\ntype: gate\ninput: draft\nprovider: fixture\nscale: 5\nthreshold: 6\n```',
+  ].join('\n\n'));
+  const r = await bench.runAll('gt3');
+  assert.equal(r.notebook.state.lenient.error, null);
+  const ok = r.notebook.state.lenient.output;
+  // fixture judge overalls live in 1..scale → threshold 1 passes, 6 fails
+  assert.equal(ok.pass, true);
+  assert.equal(ok.gate.kind, 'judge');
+  assert.equal(ok.gate.threshold, 1);
+  assert.equal(ok.score, ok.gate.judgment.overall);
+  assert.ok(ok.rationale && ok.rationale.length > 0, 'judge rationale recorded');
+  assert.equal(ok.input_ref, 'draft');
+  // pass-through: the agent's text is still there for downstream consumers
+  assert.equal(ok.output, r.notebook.state.draft.output.output);
+  const no = r.notebook.state.strict.output;
+  assert.equal(no.pass, false);
+  assert.equal(no.score, no.gate.judgment.overall);
+});
+
+test('gate errors are readable records: missing input, bad expr, judge failure', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  bench.writeNotebookFile('gt4', [
+    '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "x"\n```',
+    '```tl-cell\nid: noinput\ntype: gate\nexpr: true\n```',
+    '```tl-cell\nid: badexpr\ntype: gate\ninput: rows\nexpr: nope.missing.deep\n```',
+    '```tl-cell\nid: badscore\ntype: gate\ninput: rows\nexpr: true\nscore: oops.x\n```',
+    '```tl-cell\nid: nokind\ntype: gate\ninput: rows\n```',
+    '```tl-cell\nid: nothresh\ntype: gate\ninput: rows\nprovider: fixture\n```',
+    '```tl-cell\nid: deadjudge\ntype: gate\ninput: rows\nprovider: nope\nthreshold: 3\n```',
+  ].join('\n\n'));
+  const r = await bench.runAll('gt4');
+  assert.match(r.notebook.state.noinput.error, /noinput: gate needs input:/);
+  assert.match(r.notebook.state.badexpr.error, /badexpr: gate expr failed — /);
+  assert.match(r.notebook.state.badscore.error, /badscore: gate score expr failed — /);
+  assert.match(r.notebook.state.nokind.error, /nokind: gate needs expr: or inline judge fields/);
+  assert.match(r.notebook.state.nothresh.error, /nothresh: inline-judge gate needs a numeric threshold:/);
+  assert.match(r.notebook.state.deadjudge.error, /deadjudge: gate judge failed — .*unknown provider "nope"/);
+  // an unknown input cell errors with its name, and an errored upstream
+  // propagates as an error, never as a silent pass
+  bench.writeNotebookFile('gt5', [
+    '```tl-cell\nid: bad\ntype: agent\nprovider: nope\ninput: "hi"\n```',
+    '```tl-cell\nid: ghostgate\ntype: gate\ninput: ghost\nexpr: true\n```',
+    '```tl-cell\nid: ongate\ntype: gate\ninput: bad\nexpr: true\n```',
+  ].join('\n\n'));
+  const r2 = await bench.runAll('gt5');
+  assert.match(r2.notebook.state.ghostgate.error, /unknown cell "ghost"/);
+  assert.match(r2.notebook.state.ongate.error, /upstream "bad" has an error/);
+});
+
+test('gate staleness lockstep: edits and renames dirty the gate and its downstream', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  const cells = (expr, dataId) => [
+    `\`\`\`tl-cell\nid: ${dataId}\ntype: data\nrows:\n  - input: "a"\n\`\`\``,
+    `\`\`\`tl-cell\nid: check\ntype: gate\ninput: rows\nexpr: ${expr}\n\`\`\``,
+    '```tl-cell\nid: bot\ntype: agent\nprovider: fixture\ndata: check\n```',
+  ].join('\n\n');
+  bench.writeNotebookFile('gs', cells('output.count >= 1', 'rows'));
+  const r = await bench.runAll('gs');
+  assert.equal(r.notebook.state.check.output.pass, true);
+  assert.deepEqual((await bench.runAll('gs')).ran, []); // fresh stays fresh
+
+  // editing the gate's expr dirties the gate and its downstream, not the input
+  bench.writeNotebookFile('gs', cells('output.count >= 99', 'rows'));
+  let view = bench.readNotebook('gs');
+  assert.equal(view.state.rows.stale, false);
+  assert.equal(view.state.check.stale, true);
+  assert.equal(view.state.bot.stale, true);
+  const r2 = await bench.runAll('gs');
+  assert.equal(r2.notebook.state.check.output.pass, false);
+
+  // renaming the input leaves the gate with a dangling ref → stale, and the
+  // run says which cell went missing
+  bench.writeNotebookFile('gs', cells('output.count >= 99', 'renamed'));
+  view = bench.readNotebook('gs');
+  assert.equal(view.state.check.stale, true);
+  const r3 = await bench.runAll('gs');
+  assert.match(r3.notebook.state.check.error, /unknown cell "rows"/);
+});
+
+// ---------------------------------------------------------------------------
+// loop-back edges — the guarded backward flow (gate `loop: {back_to, max}`)
+// ---------------------------------------------------------------------------
+
+// a bench whose provider registry records every wire request — the loop tests
+// assert feedback injection against the ACTUAL rendered prompt on the wire,
+// not against intermediate structures
+function spyBench(ws, wires) {
+  const real = createProviders();
+  const providers = {
+    get(name) {
+      const p = real.get(name);
+      if (!p) return p;
+      return { ...p, complete: req => { wires.push(req); return p.complete(req); } };
+    },
+    status: () => real.status(),
+  };
+  let t = 0;
+  return createBench({ wsDir: ws, providers, now: () => new Date(1750000000000 + (t++ * 1000)) });
+}
+
+const LOOP_NB = [
+  '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "write a haiku"\n```',
+  '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: rows\ntemplate: |\n  draft: {{input}} // fb: {{feedback.rationale}} // prev: {{previous.output}}\n```',
+  '```tl-cell\nid: revise\ntype: agent\nprovider: fixture\ninput_from: draft\n```',
+  '```tl-cell\nid: check\ntype: gate\ninput: revise\nexpr: feedback != null\nloop:\n  back_to: draft\n  max: 3\n```',
+  '```tl-cell\nid: publish\ntype: agent\nprovider: fixture\ninput_from: check\n```',
+].join('\n\n');
+
+test('THE STAR TEST: pass 2\'s wire prompt contains pass 1\'s rationale (feedback is real)', async () => {
+  const ws = tmpWs();
+  const wires = [];
+  const bench = spyBench(ws, wires);
+  bench.writeNotebookFile('loop', LOOP_NB);
+  const r = await bench.runAll('loop');
+  const check = r.notebook.state.check;
+  assert.equal(check.error, null);
+  assert.equal(check.output.pass, true);
+
+  const lp = check.output.loop;
+  assert.equal(lp.back_to, 'draft');
+  assert.equal(lp.max, 3);
+  assert.deepEqual(lp.span, ['draft', 'revise']);
+  assert.equal(lp.passes.length, 2);
+  assert.equal(lp.passes[0].pass, false);
+  assert.equal(lp.passes[1].pass, true);
+  assert.equal(lp.passes[0].n, 1);
+  assert.equal(lp.passes[1].n, 2);
+  const rationale1 = lp.passes[0].rationale;
+  assert.equal(rationale1, 'expr gate: feedback != null → fail');
+
+  // THE metric: the pass-2 draft request ON THE WIRE carries pass 1's
+  // rationale (and pass 1's tail output via {{previous.output}}) — the
+  // feedback loop is real, not a re-run with the same prompt
+  const lastUser = req => {
+    const ms = (req.messages || []).filter(m => m.role === 'user');
+    return ms.length ? String(ms[ms.length - 1].content) : '';
+  };
+  const pass2Draft = wires.filter(req => lastUser(req).includes(rationale1));
+  assert.ok(pass2Draft.length >= 1, 'a wire request rendered with pass 1\'s rationale');
+  assert.ok(pass2Draft.some(req => lastUser(req).startsWith('draft: write a haiku')),
+    'the injected request is the span head\'s template render');
+  assert.ok(pass2Draft.some(req => lastUser(req).includes(lp.passes[0].output)),
+    '{{previous.output}} carried pass 1\'s span-tail output onto the wire');
+  // and pass 1's render had EMPTY bindings (unknown vars render as '')
+  assert.ok(wires.some(req => lastUser(req).startsWith('draft: write a haiku // fb:  // prev:')),
+    'pass 1 rendered with empty feedback bindings');
+
+  // the final pass persisted per-cell: the span head's record is the pass-2
+  // execution (its prompt echo carries the rationale), and the gate's
+  // pass-through is the span tail's final output
+  const draftRec = bench.readCellRecord('loop', 'draft');
+  assert.equal(draftRec.error, null);
+  assert.ok(draftRec.output.output.includes('fb: expr gate'), 'draft record is the final pass');
+  const reviseRec = bench.readCellRecord('loop', 'revise');
+  assert.equal(check.output.output, reviseRec.output.output);
+  assert.equal(check.output.output, lp.passes[1].output);
+
+  // downstream consumed the final pass
+  const publish = r.notebook.state.publish;
+  assert.equal(publish.error, null);
+  assert.equal(publish.output.handoff.value, check.output.output);
+
+  // and every stamp is coherent — nothing is born stale after a loop run
+  const view = bench.readNotebook('loop');
+  for (const [id, st] of Object.entries(view.state)) {
+    assert.equal(st.stale, false, `${id} should be fresh after the loop run`);
+  }
+});
+
+test('loop stops at max when the gate never passes; the exhausted pass persists', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  bench.writeNotebookFile('exhaust', LOOP_NB.replace('expr: feedback != null', 'expr: false'));
+  const r = await bench.runAll('exhaust');
+  const check = r.notebook.state.check;
+  assert.equal(check.error, null);
+  assert.equal(check.output.pass, false);
+  const lp = check.output.loop;
+  assert.equal(lp.passes.length, 3);           // hard stop at max, not beyond
+  assert.ok(lp.passes.every(p => p.pass === false));
+  assert.deepEqual(lp.passes.map(p => p.n), [1, 2, 3]);
+  // the FINAL pass is what persisted and what downstream saw
+  const reviseRec = bench.readCellRecord('exhaust', 'revise');
+  assert.equal(reviseRec.output.output, lp.passes[2].output);
+  assert.equal(r.notebook.state.publish.output.handoff.value, lp.passes[2].output);
+});
+
+test('a passing gate never loops: single pass, no span re-execution', async () => {
+  const ws = tmpWs();
+  const wires = [];
+  const bench = spyBench(ws, wires);
+  bench.writeNotebookFile('calm', LOOP_NB.replace('expr: feedback != null', 'expr: true'));
+  const r = await bench.runAll('calm');
+  const lp = r.notebook.state.check.output.loop;
+  assert.equal(r.notebook.state.check.output.pass, true);
+  assert.equal(lp.passes.length, 1);
+  // exactly one draft render on the wire — the loop added nothing
+  assert.equal(wires.filter(req =>
+    (req.messages || []).some(m => m.role === 'user' && String(m.content).startsWith('draft: write a haiku'))).length, 1);
+});
+
+test('per-pass scores ride the record: score expr + {{feedback.score}} injection', async () => {
+  const ws = tmpWs();
+  const wires = [];
+  const bench = spyBench(ws, wires);
+  const nb = [
+    '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "hello"\n```',
+    '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: rows\ntemplate: |\n  {{input}} [score was: {{feedback.score}}]\n```',
+    '```tl-cell\nid: check\ntype: gate\ninput: draft\nexpr: pass >= 2\nscore: pass * 10\nloop:\n  back_to: draft\n  max: 3\n```',
+  ].join('\n\n');
+  bench.writeNotebookFile('scored', nb);
+  const r = await bench.runAll('scored');
+  const lp = r.notebook.state.check.output.loop;
+  assert.equal(lp.passes.length, 2);
+  assert.deepEqual(lp.passes.map(p => p.score), [10, 20]);   // score expr per pass
+  assert.equal(r.notebook.state.check.output.score, 20);
+  // pass 2 rendered with pass 1's numeric score bound
+  assert.ok(wires.some(req => (req.messages || []).some(m =>
+    m.role === 'user' && String(m.content).includes('[score was: 10]'))));
+});
+
+test('loop refusals are readable: cap, bad max, second loop, non-ancestor, gate-in-span', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  const gate = (loopYaml, extra = '') => [
+    '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "x"\n```',
+    '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: rows\n```',
+    `\`\`\`tl-cell\nid: check\ntype: gate\ninput: draft\nexpr: true\n${loopYaml}\n\`\`\``,
+    extra,
+  ].filter(Boolean).join('\n\n');
+
+  bench.writeNotebookFile('cap', gate('loop:\n  back_to: draft\n  max: 9'));
+  let r = await bench.runAll('cap');
+  assert.match(r.notebook.state.check.error, /check: loop max 9 exceeds the hard cap of 5 passes/);
+
+  bench.writeNotebookFile('badmax', gate('loop:\n  back_to: draft\n  max: 0'));
+  r = await bench.runAll('badmax');
+  assert.match(r.notebook.state.check.error, /check: loop max must be an integer/);
+
+  bench.writeNotebookFile('nomax', gate('loop:\n  back_to: draft'));
+  r = await bench.runAll('nomax');
+  assert.match(r.notebook.state.check.error, /check: loop max must be an integer/);
+
+  // a second loop-back in the same notebook refuses on both gates
+  bench.writeNotebookFile('two', gate('loop:\n  back_to: draft\n  max: 2',
+    '```tl-cell\nid: check2\ntype: gate\ninput: draft\nexpr: true\nloop:\n  back_to: draft\n  max: 2\n```'));
+  r = await bench.runAll('two');
+  assert.match(r.notebook.state.check.error, /only one loop-back per notebook \(v1\) — "check2" already declares one/);
+  assert.match(r.notebook.state.check2.error, /only one loop-back per notebook/);
+
+  // back_to must be an ancestor — a sibling (or downstream cell) refuses
+  bench.writeNotebookFile('sideways', gate('loop:\n  back_to: other',
+    '```tl-cell\nid: other\ntype: data\nrows:\n  - input: "y"\n```').replace('back_to: other', 'back_to: other\n  max: 2'));
+  r = await bench.runAll('sideways');
+  assert.match(r.notebook.state.check.error, /loop back_to "other" is not an ancestor of this gate/);
+
+  // gates inside the span are refused (v1) — verdict shadowing would make
+  // the loop's feedback ambiguous
+  bench.writeNotebookFile('nested', [
+    '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "x"\n```',
+    '```tl-cell\nid: mid\ntype: gate\ninput: rows\nexpr: true\n```',
+    '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: mid\n```',
+    '```tl-cell\nid: check\ntype: gate\ninput: draft\nexpr: true\nloop:\n  back_to: rows\n  max: 2\n```',
+  ].join('\n\n'));
+  r = await bench.runAll('nested');
+  assert.match(r.notebook.state.check.error, /loop span contains gate "mid" — gates inside a loop span are not supported \(v1\)/);
+});
+
+test('dangling back_to: the gate is stale and the run says which cell is missing', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  bench.writeNotebookFile('dangle', LOOP_NB);
+  await bench.runAll('dangle');
+  // rename the loop target: the gate goes stale via refStrings (the back_to
+  // string no longer names a live cell) and re-running errors readably
+  bench.writeNotebookFile('dangle', LOOP_NB
+    .replace('id: draft\ntype: agent', 'id: sketch\ntype: agent')
+    .replace('input_from: draft', 'input_from: sketch'));
+  const view = bench.readNotebook('dangle');
+  assert.equal(view.state.check.stale, true);
+  const r = await bench.runAll('dangle');
+  assert.match(r.notebook.state.check.error, /check: loop back_to references unknown cell "draft"/);
+});
+
+test('editing a span cell or the gate dirties the loop correctly', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  bench.writeNotebookFile('dirty', LOOP_NB);
+  await bench.runAll('dirty');
+  assert.deepEqual((await bench.runAll('dirty')).ran, []);   // fresh stays fresh
+
+  // editing a span cell (draft's template) dirties the span and the gate
+  bench.writeNotebookFile('dirty', LOOP_NB.replace('draft: {{input}}', 'sketch: {{input}}'));
+  const view = bench.readNotebook('dirty');
+  assert.equal(view.state.rows.stale, false);
+  assert.equal(view.state.draft.stale, true);
+  assert.equal(view.state.revise.stale, true);
+  assert.equal(view.state.check.stale, true);
+  assert.equal(view.state.publish.stale, true);
+  const r = await bench.runAll('dirty');
+  assert.equal(r.notebook.state.check.error, null);
+  assert.equal(r.notebook.state.check.output.pass, true);
+
+  // editing only the gate's loop config dirties the gate, not the span
+  bench.writeNotebookFile('dirty', LOOP_NB.replace('draft: {{input}}', 'sketch: {{input}}').replace('max: 3', 'max: 2'));
+  const view2 = bench.readNotebook('dirty');
+  assert.equal(view2.state.draft.stale, false);
+  assert.equal(view2.state.check.stale, true);
+});
+
+test('a stray kind: on a gate names the real rule (gate-cell followup rider)', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  bench.writeNotebookFile('misdirect', [
+    '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "x"\n```',
+    '```tl-cell\nid: check\ntype: gate\ninput: rows\nkind: code\nscale: 5\nthreshold: 3\n```',
+  ].join('\n\n'));
+  const r = await bench.runAll('misdirect');
+  assert.match(r.notebook.state.check.error, /check: a gate takes no kind: "code" — use expr:/);
+});
+
+test('an inline-judge gate loops too: fresh judgment per pass', async () => {
+  const ws = tmpWs();
+  const bench = makeBench(ws);
+  // threshold above the fixture scale: the judge gate can never pass, so the
+  // loop deterministically exhausts max with a judgment recorded per pass
+  bench.writeNotebookFile('jloop', [
+    '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "hello"\n```',
+    '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: rows\ntemplate: |\n  {{input}} // {{feedback.rationale}}\n```',
+    '```tl-cell\nid: check\ntype: gate\ninput: draft\nprovider: fixture\nscale: 5\nthreshold: 6\nloop:\n  back_to: draft\n  max: 2\n```',
+  ].join('\n\n'));
+  const r = await bench.runAll('jloop');
+  const out = r.notebook.state.check.output;
+  assert.equal(r.notebook.state.check.error, null);
+  assert.equal(out.pass, false);
+  assert.equal(out.loop.passes.length, 2);
+  for (const p of out.loop.passes) {
+    assert.equal(typeof p.score, 'number');       // fixture judge scored every pass
+    assert.ok(p.rationale && p.rationale.length); // and left its rationale
+  }
+  assert.equal(out.gate.kind, 'judge');
+});

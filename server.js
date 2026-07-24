@@ -32,6 +32,7 @@ const { createBench } = require('./lib/engine');
 const { createProviders } = require('./lib/providers');
 const { scaffoldDemo } = require('./lib/demo');
 const { listTemplates, scaffoldTemplate } = require('./lib/templates');
+const { propose } = require('./lib/authoring');
 const { parseNotebook, serializeNotebook, slugId, CELL_TYPES, REF_FIELDS } = require('./lib/notebook');
 
 // ---------- journal (read-only run history from _metrics + eval artifacts) ----------
@@ -58,6 +59,39 @@ function appendJsonlFile(file, row) {
 
 function runEventsFile(wsDir) {
   return path.join(wsDir, '_bench', 'run-events.jsonl');
+}
+
+// ---------- assisted authoring (proposal engine + corrections log) ----------
+
+function authoringLogFile(wsDir) {
+  return path.join(wsDir, '_bench', 'authoring-log.jsonl');
+}
+
+// keep only the fields the digest reads — proposed/kept rows are the
+// training signal, not a dumping ground for arbitrary client JSON
+function authoringChoices(v) {
+  const src = v && typeof v === 'object' ? v : {};
+  const out = {};
+  for (const k of ['goal', 'posture', 'template', 'name']) {
+    if (src[k] != null && String(src[k]).trim() !== '') out[k] = String(src[k]).slice(0, 120);
+  }
+  return out;
+}
+
+// One append-only JSONL row per proposal-backed creation: what the engine
+// proposed, what the human kept, and the provider that proposed it. The
+// bench's own override-log (tl lineage): divergences are the training data
+// the next proposal's digest learns from. Only creations that had a proposal
+// log — a hand-built experiment has no proposed-vs-kept diff to learn from.
+function recordAuthoring(wsDir, authoring, kept) {
+  if (!authoring || typeof authoring !== 'object' || !authoring.proposed) return;
+  appendJsonlFile(authoringLogFile(wsDir), {
+    at: new Date().toISOString(),
+    notes: String(authoring.notes || '').slice(0, 4000),
+    proposed: authoringChoices(authoring.proposed),
+    kept: authoringChoices(kept),
+    provider: String(authoring.provider || 'offline').slice(0, 40),
+  });
 }
 
 function recordRunEvent(wsDir, row) {
@@ -283,6 +317,12 @@ const CELL_TEMPLATES = {
   golden: 'set: my-golden-set\ncount: 4\nprovider: fixture\nseeds:\n  - input: "example input"\n    expected: "expected answer"\ninstructions: Generate more examples like the seeds.',
   eval: 'data: my-data-cell\ncandidates: [my-agent-cell]\nmetrics: []\njudges: []',
   annotate: 'source: my-eval-cell\nlabels: [good, bad]',
+  switch: '# input: my-data-cell\n# cases:\n#   - when: count > 0\n#     use: my-branch-cell\n# default: my-fallback-cell',
+  map: '# input: my-data-cell\n# expr: "({ ...row })"',
+  retry: '# target: my-agent-cell\n# attempts: 3',
+  catch: '# try: my-agent-cell\n# fallback: my-fallback-cell',
+  gate: '# input: my-agent-cell\n# expr: judgment.overall >= 3.5\n# loop:\n#   back_to: my-draft-cell\n#   max: 3',
+  tool: 'kind: expr\ndescription: echo the input\nexpr: String(args.input || "")',
   note: 'New note.',
 };
 
@@ -405,6 +445,19 @@ function handlePost(pathname, body, res) {
         return done({ run_id: runId, status: 'cancelling' });
       }
 
+      // notes + corrections log → a structured setup proposal. First available
+      // live provider answers; otherwise (or on provider error / malformed
+      // output) the deterministic recommender does, labeled "offline
+      // suggestion". propose() never throws for provider trouble — the
+      // fallback rides the same 200 with a readable note.
+      case '/api/authoring-propose': {
+        const ws = workspace(body.ws);
+        const rows = readJsonlFile(authoringLogFile(ws.dir));
+        return propose({ notes: String(body.notes || '').slice(0, 4000), rows, providers })
+          .then(done)
+          .catch(failWith);
+      }
+
       // create a notebook (empty skeleton, demo, or catalogue template)
       case '/api/notebook-create': {
         const bench = benchFor(body.ws);
@@ -420,6 +473,11 @@ function handlePost(pathname, body, res) {
           if (body.notes != null && String(body.notes).trim()) {
             editNotebook(bench, r.name, nb => { nb.meta.notes = String(body.notes).trim(); });
           }
+          recordAuthoring(workspace(body.ws).dir, body.authoring, {
+            ...(body.authoring && body.authoring.kept),
+            template: r.template,
+            name: r.name,
+          });
           return done({ name: r.name, template: r.template, live: r.live });
         }
         const name = slugId(body.name);
@@ -433,11 +491,19 @@ function handlePost(pathname, body, res) {
           if (body.notes != null && String(body.notes).trim()) nb2.meta.notes = String(body.notes).trim();
           else delete nb2.meta.notes;
           bench.writeNotebookFile(name, serializeNotebook(nb2));
+          recordAuthoring(workspace(body.ws).dir, body.authoring, {
+            ...(body.authoring && body.authoring.kept),
+            name,
+          });
           return done({ name, copied_from: source });
         }
         const notes = body.notes != null && String(body.notes).trim()
           ? `notes: ${JSON.stringify(String(body.notes).trim())}\n` : '';
-        bench.writeNotebookFile(name, `---\nnotebook: ${name}\ntitle: "${(body.title || name).replace(/"/g, "'")}"\n${notes}---\n\nA new bench notebook. Add cells to get going.\n`);
+        bench.writeNotebookFile(name, `---\nnotebook: ${name}\ntitle: ${JSON.stringify(String(body.title || name))}\n${notes}---\n\nA new bench notebook. Add cells to get going.\n`);
+        recordAuthoring(workspace(body.ws).dir, body.authoring, {
+          ...(body.authoring && body.authoring.kept),
+          name,
+        });
         return done({ name });
       }
 
@@ -529,18 +595,30 @@ function handlePost(pathname, body, res) {
           if (!from) throw new Error(`no source cell "${body.from}"`);
           if (!to) throw new Error(`no target cell "${body.to}"`);
           if (to.type === 'note') throw new Error('cannot connect into a note');
+          if (body.loop) {
+            // the loop-back variant: the canvas dropped a gate's connector on
+            // an EARLIER node — the loop lives on the gate (`from`), pointing
+            // back_to the drop target; the engine validates span/ancestry at
+            // run time with readable errors
+            if (from.type !== 'gate') throw new Error(`only a gate cell can carry a loop-back (got ${from.type} "${from.id}")`);
+            const max = Number(body.max == null ? 3 : body.max);
+            if (!Number.isInteger(max) || max < 1 || max > 5) throw new Error('loop max must be an integer between 1 and 5');
+            from.config = { ...(from.config || {}), loop: { back_to: to.id, max } };
+            delete from.raw;
+            return;
+          }
           connectCells(from, to, body.field);
         });
         return done({ notebook: nb2 });
       }
 
-      // update notebook frontmatter — allowlisted keys only (title, goal).
+      // update notebook frontmatter — allowlisted keys only (title, goal, notes).
       // Same parse → mutate meta → serialize path as every cell edit; the
       // notebook name is slug-guarded inside editNotebook via notebookPath.
       case '/api/notebook-meta': {
         const bench = benchFor(body.ws);
         const updates = body.updates && typeof body.updates === 'object' ? body.updates : {};
-        const allowed = ['title', 'goal'];
+        const allowed = ['title', 'goal', 'notes'];
         for (const key of Object.keys(updates)) {
           if (!allowed.includes(key)) return failWith(new Error(`meta key "${key}" is not editable (allowed: ${allowed.join(', ')})`));
         }
@@ -664,6 +742,7 @@ function defaultRefField(from, to) {
   }
   if (to.type === 'switch') return 'input';
   if (to.type === 'map') return 'input';
+  if (to.type === 'gate') return to.config && to.config.input ? 'needs' : 'input';
   if (to.type === 'retry') return 'target';
   if (to.type === 'catch') return to.config && to.config.try ? 'fallback' : 'try';
   return allowedRefField(to.type, 'needs') ? 'needs' : '';

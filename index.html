@@ -13,16 +13,16 @@
 <title>tl bench</title>
 <style>
   :root {
-    /* field-guide tokens — cooler paper, restrained moss */
-    --bg: #f6f4ee; --surface: #ffffff; --surface-2: #efece4; --surface-3: #e3dfd4;
-    --border: rgba(30, 30, 30, 0.08); --border-2: rgba(30, 30, 30, 0.16);
-    --text-1: #14140f; --text-2: #56564f; --text-3: #8f8f86;
-    --accent: #2f5b34; --accent-2: #457c47; --accent-glow: rgba(47, 91, 52, 0.10);
-    --green: #2f5b34; --green-dim: rgba(47, 91, 52, 0.10);
-    --amber: #8a5a1b; --amber-dim: rgba(138, 90, 27, 0.12);
-    --red: #9a3a2f; --red-dim: rgba(154, 58, 47, 0.12);
-    --node-bg: #ffffff; --node-border: rgba(30, 30, 30, 0.10);
-    --on-accent: #f8f6f0;
+    /* field-guide tokens — airy warm paper, with brown actions and green status */
+    --bg: #fbf9f5; --surface: #fffdfa; --surface-2: #f3eee7; --surface-3: #e9e0d4;
+    --border: rgba(42, 31, 24, 0.08); --border-2: rgba(42, 31, 24, 0.16);
+    --text-1: #241b16; --text-2: #62564d; --text-3: #887b70;
+    --accent: #65564f; --accent-2: #7c6c62; --accent-glow: rgba(101, 86, 79, 0.13);
+    --green: #3f744d; --green-dim: rgba(63, 116, 77, 0.12);
+    --amber: #9b631f; --amber-dim: rgba(155, 99, 31, 0.13);
+    --red: #a64539; --red-dim: rgba(166, 69, 57, 0.12);
+    --node-bg: #fffdfa; --node-border: rgba(42, 31, 24, 0.10);
+    --on-accent: #fffaf4;
     --p-bedrock: #3d6fb8; --p-anthropic: #d97757; --p-gemini: #4285f4;
     --radius: 10px;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -30,16 +30,16 @@
     --display: "Fraunces", "Iowan Old Style", Georgia, serif;
   }
   :root.dark {
-    /* candlelit paper */
-    --bg: #1a150d; --surface: #221c13; --surface-2: #2b2418; --surface-3: #382e1f;
-    --border: rgba(240, 220, 180, 0.10); --border-2: rgba(240, 220, 180, 0.20);
-    --text-1: #f4ecda; --text-2: #b8ab8f; --text-3: #7f725a;
-    --accent: #94c48c; --accent-2: #a9d29f; --accent-glow: rgba(148, 196, 140, 0.14);
-    --green: #94c48c; --green-dim: rgba(148, 196, 140, 0.14);
-    --amber: #d68b3f; --amber-dim: rgba(214, 139, 63, 0.16);
-    --red: #e07564; --red-dim: rgba(224, 117, 100, 0.16);
-    --node-bg: #221c13; --node-border: rgba(240, 220, 180, 0.12);
-    --on-accent: #1a150d;
+    /* warm dusk: lighter surfaces, brown actions, and distinct status colors */
+    --bg: #211b18; --surface: #2a221e; --surface-2: #352a24; --surface-3: #44362e;
+    --border: rgba(250, 235, 221, 0.10); --border-2: rgba(250, 235, 221, 0.19);
+    --text-1: #f8eee5; --text-2: #c6b7aa; --text-3: #a39386;
+    --accent: #b8a39a; --accent-2: #d2beb3; --accent-glow: rgba(184, 163, 154, 0.16);
+    --green: #8fce9a; --green-dim: rgba(143, 206, 154, 0.14);
+    --amber: #e1a857; --amber-dim: rgba(225, 168, 87, 0.16);
+    --red: #ed8c7e; --red-dim: rgba(237, 140, 126, 0.16);
+    --node-bg: #2a221e; --node-border: rgba(250, 235, 221, 0.12);
+    --on-accent: #2a1b13;
     --p-bedrock: #7fa7de; --p-anthropic: #e08a63; --p-gemini: #8ab4f8;
   }
 
@@ -96,6 +96,7 @@
   }
   button:hover { border-color: var(--accent); }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  button.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
   button.quiet { border: none; background: none; color: var(--text-3); padding: 3px 6px; }
   button.quiet:hover { color: var(--text-1); }
   button:disabled { opacity: .5; cursor: default; }
@@ -114,7 +115,57 @@
   .dot.offline { background: transparent; box-shadow: inset 0 0 0 1.5px var(--accent); }
   .providers .prov-sep { width: 1px; height: 12px; background: var(--border-2); align-self: center; }
 
-  main { width: 100%; max-width: 960px; margin: 0 auto; padding: 6px 24px 120px; }
+  main { width: 100%; max-width: 1180px; margin: 0 auto; padding: 6px 24px 120px; }
+  .sec-inner { max-width: 960px; margin: 0 auto; }
+
+  /* ---------- one-scroll sections: field-guide chapter headers ---------- */
+  .page-sec { scroll-margin-top: 54px; }
+  .page-sec + .page-sec { margin-top: 36px; border-top: 1px solid var(--border); padding-top: 24px; }
+  .sec-head { max-width: 960px; margin: 0 auto 12px; }
+  .sec-head .kicker {
+    font: 600 10.5px var(--sans); letter-spacing: .14em; text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .sec-head h2 { font-family: var(--display); font-weight: 600; font-size: 21px; margin: 2px 0 0; }
+  .sec-head .sub { color: var(--text-2); font-size: 12.5px; font-style: italic; }
+  .subsec-head { margin: 26px 0 4px; }
+  .subsec-head .kicker {
+    font: 600 10.5px var(--sans); letter-spacing: .14em; text-transform: uppercase;
+    color: var(--text-3);
+  }
+
+  /* the "→ configure in notebook" jump lands with a brief flash */
+  .cell.flash { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  /* lazy rendering: offscreen cells skip layout + paint (content-visibility);
+     the intrinsic-size estimate keeps scroll geometry sane on big notebooks */
+  .cell { content-visibility: auto; contain-intrinsic-size: auto 200px; }
+
+  /* ---------- section 1: experiment details summary (existing experiment) ---------- */
+  .details-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+  }
+  .details-card .row { display: grid; grid-template-columns: 92px 1fr; gap: 4px 12px; font-size: 12.5px; margin: 4px 0; }
+  .details-card .row b {
+    font: 700 10px var(--sans); letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-3); padding-top: 2px;
+  }
+  .details-card .row .val { color: var(--text-1); overflow-wrap: anywhere; white-space: pre-wrap; }
+  .details-card .val.mono { font-family: var(--mono); font-size: 12px; }
+  .details-card .val.muted { color: var(--text-3); font-style: italic; }
+  .details-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .details-head .spacer { flex: 1; }
+  .details-form { display: grid; gap: 10px; margin-top: 4px; }
+  .details-form label {
+    display: grid; gap: 4px; font: 700 10px var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text-3);
+  }
+  .details-form input, .details-form textarea {
+    font: 12.5px/1.5 var(--sans); color: var(--text-1); background: var(--surface);
+    border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 10px;
+    min-height: 0; resize: vertical;
+  }
+  .details-actions { display: flex; gap: 8px; margin-top: 4px; }
 
   /* ---------- editorial header: serif title, small-caps kicker ---------- */
   .masthead { padding: 22px 0 6px; }
@@ -168,7 +219,7 @@
   .graph .gcell.err { border-color: var(--red); background: var(--red-dim); color: var(--red); }
   .graph .arrow { color: var(--text-3); font-size: 11px; }
 
-  /* ---------- flow canvas — specimen plate over the notebook graph ---------- */
+  /* ---------- flow canvas — the notebook graph, drawn ---------- */
   .flow-shell { width: 100%; max-width: 1180px; margin: 0 auto; }
   .flow-board {
     display: grid; grid-template-columns: 46px minmax(520px, 1fr) 300px; gap: 14px;
@@ -219,13 +270,45 @@
   .flow-edge.hot { stroke: var(--accent); stroke-width: 2; }
   .flow-edge.chain { stroke: var(--accent); stroke-width: 1.8; stroke-dasharray: 6 4; opacity: .9; }
   .flow-edge.chain.hot { stroke-dasharray: none; stroke-width: 2.2; }
+  /* the loop-back edge: SOLID and distinct (amber, arrowed, labeled) — a
+     guarded backward control edge, never a dataflow dependency */
+  .flow-edge.loop { stroke: var(--amber); stroke-width: 1.8; opacity: .95; }
+  .flow-edge.loop.hot { stroke-width: 2.4; }
+  .flow-edges .loop-arrow-head { fill: var(--amber); stroke: none; }
+  .flow-edges .loop-label {
+    fill: var(--amber); font: 700 10px var(--sans); letter-spacing: .06em;
+    text-transform: uppercase; opacity: .9;
+  }
+  .flow-edges .loop-label.hot { opacity: 1; }
+  /* gate node tint: the checkpoint reads amber, same hue as its back-edge */
+  .flow-node .node-icon.t-gate { color: var(--amber); background: var(--amber-dim); }
+  .pal-btn .ti-gate { color: var(--amber); }
+  .pal-btn:hover .ti-gate, .pal-btn:focus-visible .ti-gate { color: var(--amber); }
+  /* the make-loop-back popover the connect gesture opens on an earlier node */
+  .flow-loop-prompt {
+    position: absolute; z-index: 6; min-width: 210px; background: var(--surface);
+    border: 1px solid var(--amber); border-radius: 10px; padding: 12px 14px;
+    box-shadow: 0 14px 34px -18px rgba(30,30,30,.55);
+  }
+  .flow-loop-prompt .lp-title { font: 700 10px var(--sans); letter-spacing: .13em; text-transform: uppercase; color: var(--amber); margin-bottom: 4px; }
+  .flow-loop-prompt .lp-sub { color: var(--text-2); font-size: 12px; margin-bottom: 9px; }
+  .flow-loop-prompt label { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 12px; margin-bottom: 10px; }
+  .flow-loop-prompt input[type=number] { width: 56px; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border-2); border-radius: 8px; padding: 3px 8px; }
+  .flow-loop-prompt .lp-actions { display: flex; gap: 8px; }
+  /* per-pass score list in the gate's inspector */
+  .insp-passes { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 9px; }
+  .insp-passes .ip-head { font: 700 10px var(--sans); letter-spacing: .13em; text-transform: uppercase; color: var(--text-3); margin-bottom: 6px; }
+  .insp-passes .ip-row { display: flex; align-items: center; gap: 8px; font: 11.5px/1.5 var(--mono); color: var(--text-2); padding: 3px 0; border-top: 1px dotted var(--border); }
+  .insp-passes .ip-row:first-of-type { border-top: none; }
+  .insp-passes .ip-n { color: var(--text-3); }
+  .insp-passes .ip-score { margin-left: auto; font-weight: 700; color: var(--text-1); }
   .flow-node {
     position: absolute; width: 190px; min-height: 82px; border: 1px solid var(--node-border);
     border-radius: 8px; background: var(--node-bg); padding: 11px 12px; cursor: grab;
     user-select: none; box-shadow: 0 1px 2px rgba(30,30,30,.04), 0 12px 26px -22px rgba(30,30,30,.55);
   }
   .flow-node:active { cursor: grabbing; }
-  .flow-node:hover, .flow-node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow), 0 12px 28px -20px rgba(47,91,52,.55); }
+  .flow-node:hover, .flow-node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow), 0 12px 28px -20px rgba(138,76,43,.45); }
   .flow-node .node-top { display: flex; align-items: center; gap: 8px; }
   .flow-node .node-icon {
     width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
@@ -289,23 +372,10 @@
   .flow-inspector .meta { color: var(--text-3); font-size: 12px; margin-bottom: 12px; }
   .flow-inspector .status-line { display: flex; align-items: center; gap: 7px; color: var(--text-2); margin: 8px 0 10px; }
   .flow-inspector pre { max-height: 220px; overflow: auto; }
-  .flow-inspector textarea {
-    width: 100%; min-height: 160px; font: 12px/1.5 var(--mono); padding: 10px 12px;
-    border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
-    color: var(--text); resize: vertical; box-sizing: border-box;
-  }
   .flow-inspector .insp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-  .flow-inspector .field-grid { display: grid; gap: 8px; margin: 8px 0 12px; }
-  .flow-inspector .field-row { display: grid; gap: 4px; }
-  .flow-inspector .field-row label { font: 700 10px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); }
-  .flow-inspector .field-row input, .flow-inspector .field-row select {
-    width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px;
-    background: var(--surface); color: var(--text-1); padding: 8px 9px; font: 12px var(--mono);
-  }
-  .flow-inspector .field-row textarea { min-height: 76px; }
-  .flow-inspector .connect-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: end; margin-top: 8px; }
-  .flow-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0 12px; }
-  .flow-editor textarea { border: 1px solid var(--border); border-radius: 8px; min-height: 180px; }
+  /* the inspector is a status card now — config editing lives in the notebook
+     section; this jump is the bridge */
+  .insp-jump { width: 100%; margin-top: 8px; text-align: left; }
   .flow-side { display: flex; flex-direction: column; gap: 12px; }
   .run-log { margin-top: 12px; }
   .run-log summary { cursor: pointer; color: var(--text-2); font-weight: 600; }
@@ -453,6 +523,20 @@
   .ob-note select { margin-left: 6px; }
   .ob-note textarea { display:block; width:100%; margin-top:6px; min-height:88px; resize:vertical; }
   .ob-create-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  /* proposed-setup area: collapsed until a proposal arrives or the human
+     expands it by hand */
+  .ob-prop-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .ob-prop-head .ob-label { margin-bottom: 0; }
+  .ob-prop-head .expand { margin-left: auto; }
+  .tag.prop { background: var(--accent-glow); color: var(--accent); }
+  .ob-prop-body { margin-top: 8px; }
+  .ob-prop-notes { margin-top: 10px; display: grid; gap: 4px; font-size: 12.5px; color: var(--text-2); }
+  .ob-prop-notes b {
+    font: 700 10px var(--sans); letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-3); margin-right: 6px;
+  }
+  .ob-pending { animation: ob-pulse 1.2s ease-in-out infinite; }
+  @keyframes ob-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
   .ob-cli {
     font-family: var(--mono); font-size: 11.5px; color: var(--text-2);
     background: var(--surface-2); border-radius: 8px; padding: 7px 11px; margin-top: 12px;
@@ -503,6 +587,7 @@
     font-family: var(--display); font-size: 18px; font-weight: 600; margin: 0; color: var(--text-1);
   }
   .scatter-legend { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
+  :root.dark .scatter-legend span { filter: brightness(1.45) saturate(.78); }
   .scatter-legend span { display: inline-flex; align-items: center; gap: 5px; }
   .scatter-legend i {
     width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: currentColor;
@@ -527,11 +612,6 @@
   }
   .journal-count { color: var(--text-2); font-size: 12.5px; }
   .journal-count b { color: var(--text-1); font-weight: 600; }
-  .journal-filters { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
-  .journal-filters select {
-    font-size: 12px; padding: 3px 8px; border-radius: 999px;
-    background: var(--surface); border: 1px solid var(--border-2);
-  }
   .journal-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
   .journal-table th {
     text-align: left; padding: 10px 8px; color: var(--text-3);
@@ -656,6 +736,12 @@
   <symbol id="ic-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
   </symbol>
+  <symbol id="ic-gate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- checkpoint gate: two posts, an arched bar, and the verdict check -->
+    <path d="M4.5 20.5V9M19.5 20.5V9"/>
+    <path d="M4.5 9c0-3.2 3.36-5.5 7.5-5.5S19.5 5.8 19.5 9"/>
+    <path d="M8.9 13.6l2.2 2.2 4-4.4"/>
+  </symbol>
   <symbol id="ic-cell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <rect x="5" y="5" width="14" height="14" rx="3"/>
   </symbol>
@@ -667,25 +753,26 @@
       <path d="M12 21C12 13 8 9 5 4c7 1 12 5 12 11 0 3-2 6-5 6z"/><path d="M12 21c0-6 2-9 5-12"/>
     </svg>
   </div>
-  <button data-view="flow" title="flow — the cell graph">
+  <button data-section="details" title="experiment — details &amp; setup">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 5.5h9.2a2 2 0 0 1 1.4.58l5.4 5.35a1 1 0 0 1 0 1.42l-5.4 5.35a2 2 0 0 1-1.4.58H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z"/>
+      <circle cx="8" cy="12" r="1.3"/>
+    </svg>
+  </button>
+  <button data-section="flow" title="flow chart — the cell graph">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
       <circle cx="5" cy="6" r="2.4"/><circle cx="5" cy="18" r="2.4"/><circle cx="19" cy="12" r="2.4"/>
       <path d="M7.4 6.6 16.7 11M7.4 17.4 16.7 13"/>
     </svg>
   </button>
-  <button data-view="notebook" title="field notebook">
+  <button data-section="notebook" title="notebook configuration">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
       <path d="M4 4.5h8.5a3 3 0 0 1 3 3V20H7a3 3 0 0 1-3-3z"/><path d="M19.5 7.5V20h-4"/>
     </svg>
   </button>
-  <button data-view="results" title="bench results">
+  <button data-section="results" title="results &amp; journal">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M3 13h4l2.2-6.5L13.5 18l2.3-5H21"/>
-    </svg>
-  </button>
-  <button data-view="journal" title="journal — run history">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-      <rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9 9.5V19.5"/>
     </svg>
   </button>
   <div class="push"></div>
@@ -698,9 +785,9 @@
 
 <div class="content">
   <header class="topbar">
-    <select id="nb" title="project"></select>
+    <select id="nb" title="experiment"></select>
     <select id="ws" class="ws-compact" title="workspace" hidden></select>
-    <button id="new-nb" class="quiet" title="create a project — template or from scratch">+ new project</button>
+    <button id="new-nb" class="quiet" title="create an experiment — describe it and the bench proposes the setup">+ new experiment</button>
     <button id="run-all" class="primary">▶ run all</button>
     <button id="stop-run" class="quiet" title="stop the active run" hidden>■ Stop</button>
     <div class="providers" id="providers"></div>
@@ -716,14 +803,20 @@
 // ---------------------------------------------------------------------------
 const S = {
   ws: null, nb: null, boot: null, notebook: null, nbList: [],
-  onboard: { goal: 'compare', posture: 'fixture', override: '', name: '', notes: '', copyFrom: '' },
-  running: new Set(), activeRuns: {}, editing: new Set(), view: 'notebook',
-  goalEditing: false,
-  flow: { layout: null, selected: null, editing: false, logOpen: true, inspectorOpen: true, runLog: [], connect: null },
+  onboard: freshOnboard(),
+  running: new Set(), activeRuns: {}, editing: new Set(),
+  // one-scroll page: mode 'experiment' (four sections) or 'new' (the create
+  // flow occupies section 1 and the other sections wait for the experiment)
+  mode: 'experiment', section: 'details',
+  goalEditing: false, detailsEditing: false,
+  flow: { layout: null, selected: null, logOpen: true, inspectorOpen: true, runLog: [], connect: null, loopPrompt: null },
   journal: { runs: [], notebooks: [], models: [], nbFilter: '', modelFilter: '', detail: null, openId: null },
-  results: { runs: [], models: [], modelFilter: '', xKey: '', yKey: '' },
+  // the aggregate all-runs graph owns only its axis choice; the notebook and
+  // model filters live on S.journal so the graph and the run list always
+  // describe the same subset
+  results: { xKey: '', yKey: '' },
 };
-const MODEL_COLORS = ['#2f5b34', '#457c47', '#8b6914', '#a35d3a', '#3d5a80', '#6b4c7a', '#2a6f6f', '#7a4e2d'];
+const MODEL_COLORS = ['#276e66', '#778e3c', '#8b6914', '#a35d3a', '#3d5a80', '#6b4c7a', '#2a6f6f', '#7a4e2d'];
 
 const $ = s => document.querySelector(s);
 function esc(s) {
@@ -782,28 +875,71 @@ $('#theme').onclick = () => {
   applyTheme(dark ? 'dark' : 'light');
 };
 
-// per-view identity is the kicker only — the masthead title/goal belong to
-// the project, constant across all four lenses
-const VIEWS = {
-  flow:     { kicker: 'SPECIMEN', spec: 'ui-flow-canvas' },
-  notebook: { kicker: 'FIELD NOTEBOOK', spec: null },
-  results:  { kicker: 'BENCH RESULTS', spec: 'ui-results-dashboard' },
-  journal:  { kicker: 'JOURNAL', spec: 'ui-journal-run-history' },
+// ---------------------------------------------------------------------------
+// one-scroll chapters — the rail is anchor navigation, not a view switcher.
+// Four sections in workflow order; the kickers keep the field-guide voice.
+// ---------------------------------------------------------------------------
+const SECTIONS = {
+  details:  { kicker: 'EXPERIMENT',     title: 'Details',                sub: 'name, goal, and intent — the experiment in your own words' },
+  flow:     { kicker: 'FLOW',           title: 'Flow chart',             sub: 'shape, status, and wiring — deep configuration lives in the notebook below' },
+  notebook: { kicker: 'FIELD NOTEBOOK', title: 'Notebook configuration', sub: 'the cells themselves — every knob, editor, and output' },
+  results:  { kicker: 'BENCH RESULTS',  title: 'Results',                sub: 'trial scores and the run journal, newest first' },
 };
-async function setView(v) {
-  if (!VIEWS[v]) return;
-  S.view = v; localStorage.setItem('bench.view', v);
-  for (const b of document.querySelectorAll('#rail button[data-view]'))
-    b.classList.toggle('active', b.dataset.view === v);
-  if (v === 'journal') await loadJournal();
-  else if (v === 'results') await loadResults();
-  else if (v === 'flow') await loadFlowLayout();
-  else render();
+let spy = null;               // IntersectionObserver driving the rail's active state
+let spySuppressUntil = 0;     // programmatic smooth-scrolls don't fight the spy
+
+function setActiveSection(id) {
+  if (!SECTIONS[id]) return;
+  S.section = id;
+  for (const b of document.querySelectorAll('#rail button[data-section]'))
+    b.classList.toggle('active', b.dataset.section === id);
 }
-for (const b of document.querySelectorAll('#rail button[data-view]'))
-  b.onclick = () => { setView(b.dataset.view); };
-S.view = VIEWS[DEEP_LINK.get('view')] ? DEEP_LINK.get('view')
-  : VIEWS[localStorage.getItem('bench.view')] ? localStorage.getItem('bench.view') : 'notebook';
+function railGo(id, behavior) {
+  const el = document.getElementById('sec-' + id);
+  if (!el) return;
+  spySuppressUntil = Date.now() + 700;
+  setActiveSection(id);
+  if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
+  el.scrollIntoView({ behavior: behavior || 'smooth', block: 'start' });
+}
+for (const b of document.querySelectorAll('#rail button[data-section]'))
+  b.onclick = () => railGo(b.dataset.section);
+addEventListener('hashchange', () => applyHash('smooth'));
+
+// scroll-spy: zero-dep IntersectionObserver — a band roughly a quarter down
+// the viewport decides the active chapter as the page scrolls
+function initScrollSpy() {
+  if (spy) spy.disconnect();
+  const secs = [...document.querySelectorAll('.page-sec[data-section]')];
+  if (!secs.length) { spy = null; return; }
+  spy = new IntersectionObserver(entries => {
+    if (Date.now() < spySuppressUntil) return;
+    const hit = entries.filter(e => e.isIntersecting).map(e => e.target)
+      .sort((a, b) => b.offsetTop - a.offsetTop)[0];
+    if (hit) setActiveSection(hit.dataset.section);
+  }, { root: document.querySelector('.content'), rootMargin: '-25% 0px -60% 0px', threshold: 0 });
+  for (const el of secs) spy.observe(el);
+}
+
+// deep links: #details/#flow/#notebook/#results (plus #journal for the run
+// journal block); legacy ?view= links map onto the same chapters
+function applyHash(behavior) {
+  const raw = (location.hash || '').replace(/^#/, '') || legacyViewParam();
+  if (!raw) return;
+  if (raw === 'journal') {
+    const el = document.getElementById('journal-block');
+    if (!el) return;
+    spySuppressUntil = Date.now() + 700;
+    setActiveSection('results');
+    el.scrollIntoView({ behavior: behavior || 'auto', block: 'start' });
+    return;
+  }
+  if (SECTIONS[raw]) railGo(raw, behavior || 'auto');
+}
+function legacyViewParam() {
+  const v = DEEP_LINK.get('view');
+  return v && ({ flow: 'flow', notebook: 'notebook', results: 'results', journal: 'journal' })[v] || '';
+}
 
 // ---------------------------------------------------------------------------
 // boot + navigation
@@ -828,8 +964,8 @@ async function boot() {
   S.ws = localStorage.getItem('bench.ws');
   if (!S.boot.workspaces.some(w => w.name === S.ws)) S.ws = (S.boot.workspaces[0] || {}).name || null;
   if (S.ws) wsSel.value = S.ws;
-  await setView(S.view);
   await loadNotebooks();
+  applyHash('auto');
 }
 
 async function loadNotebooks() {
@@ -840,26 +976,31 @@ async function loadNotebooks() {
   sel.innerHTML = d.notebooks.map(n => `<option value="${esc(n.name)}">${esc(n.title)}</option>`).join('');
   const remembered = localStorage.getItem('bench.nb.' + S.ws);
   S.nb = d.notebooks.some(n => n.name === remembered) ? remembered : (d.notebooks[0] || {}).name || null;
-  if (!S.nb) { S.notebook = null; S.goalEditing = false; }
-  if (S.nb) { sel.value = S.nb; await loadNotebook(); }
-  else if (S.view === 'journal') { await loadJournal(); }
-  else if (S.view === 'results') { await loadResults(); }
-  else {
-    // first run: no notebooks yet — open the onboarding wizard, which starts
-    // from the thing being tested and scaffolds a starter from the catalogue
-    renderOnboarding();
+  if (S.nb) {
+    sel.value = S.nb;
+    S.mode = 'experiment';
+    await loadNotebook();
+  } else {
+    // first run: no notebooks yet — the create flow IS section 1, so the
+    // page opens in 'new' mode with the proposal wizard as the first cell
+    S.notebook = null; S.goalEditing = false;
+    S.mode = 'new'; S.onboard = freshOnboard();
+    renderPage();
   }
 }
 
+// load everything the one-scroll page draws: the notebook, its canvas layout,
+// and the run ledger (the results and journal sections share one fetch)
 async function loadNotebook() {
-  S.goalEditing = false;
+  S.mode = 'experiment';
+  S.goalEditing = false; S.detailsEditing = false;
   S.notebook = await api('/api/notebook?ws=' + encodeURIComponent(S.ws) + '&nb=' + encodeURIComponent(S.nb));
-  if (S.view === 'flow') await loadFlowLayout();
-  render();
+  await Promise.all([loadFlowLayout(), loadRunData()]);
+  renderPage();
 }
 
 async function loadFlowLayout() {
-  if (!S.ws || !S.nb) { render(); return; }
+  if (!S.ws || !S.nb) { S.flow.layout = null; return; }
   try {
     const d = await api('/api/layout?ws=' + encodeURIComponent(S.ws) + '&nb=' + encodeURIComponent(S.nb));
     S.flow.layout = d.layout || null;
@@ -867,22 +1008,66 @@ async function loadFlowLayout() {
     S.flow.layout = null;
     toast(String(e.message || e));
   }
-  render();
+}
+
+async function loadRunData() {
+  if (!S.ws) return;
+  try {
+    const d = await api('/api/journal?ws=' + encodeURIComponent(S.ws));
+    S.journal.runs = d.runs || [];
+    S.journal.notebooks = d.notebooks || [];
+    S.journal.models = d.models || [];
+    // Keep one run expanded. On first load (and after a run disappears), the
+    // newest visible run is the honest default rather than an aggregate view.
+    const visible = filteredJournalRuns();
+    if (!visible.some(r => r.run_id === S.journal.openId)) {
+      S.journal.openId = visible.length ? visible[0].run_id : null;
+      S.journal.detail = null;
+    }
+    const open = visible.find(r => r.run_id === S.journal.openId);
+    if (open && !S.journal.detail) {
+      try {
+        S.journal.detail = await api('/api/journal/run?ws=' + encodeURIComponent(S.ws)
+          + '&nb=' + encodeURIComponent(open.notebook) + '&run=' + encodeURIComponent(open.run_id));
+      } catch (e) {
+        S.journal.detail = { error: String(e.message || e) };
+      }
+    }
+    const series = resultsSeriesKeys(d.runs || []);
+    if (!series.includes(S.results.xKey)) S.results.xKey = series[0] || '';
+    if (!series.includes(S.results.yKey)) S.results.yKey = series[1] || series[0] || '';
+    S.runDataError = null;
+  } catch (e) {
+    S.runDataError = String(e.message || e);
+  }
 }
 
 $('#ws').onchange = e => { S.ws = e.target.value; localStorage.setItem('bench.ws', S.ws); loadNotebooks(); };
 $('#nb').onchange = e => { S.nb = e.target.value; localStorage.setItem('bench.nb.' + S.ws, S.nb); loadNotebook(); };
 $('#run-all').onclick = () => runCell(null);
 $('#stop-run').onclick = () => cancelActiveRun();
-// the single creation entry: the wizard owns templates AND from-scratch
+// the single creation entry: the proposal flow takes over section 1
 $('#new-nb').onclick = () => showOnboarding();
+function exitNewMode() {
+  S.mode = 'experiment';
+  renderPage();
+}
 // ---------------------------------------------------------------------------
-// first-run onboarding — start from the thing being tested. A deterministic
-// template wizard: testing goal + provider posture map onto the same starter
-// catalogue the CLI scaffolds from (`bench scaffold <id> --name <slug>`), so
-// the UI path and the CLI path write identical notebooks. No network, no
-// generation — the starters are inspectable markdown and explain themselves.
+// onboarding — describe the experiment, the bench proposes the setup.
+// The entry is name/duplicate + notes; one form-level action asks the
+// proposal engine (/api/authoring-propose) to fill the proposed-setup area,
+// which starts collapsed with nothing selected. The human adjusts, then the
+// same button (now "Create experiment") scaffolds from the same starter
+// catalogue the CLI uses (`bench scaffold <id> --name <slug>`). Offline the
+// proposal degrades honestly to the labeled deterministic "offline
+// suggestion" — never a faked AI proposal.
 // ---------------------------------------------------------------------------
+function freshOnboard() {
+  return {
+    goal: '', posture: '', override: '', name: '', notes: '', copyFrom: '',
+    expanded: false, pending: false, proposal: null, provider: '', label: '', note: '',
+  };
+}
 const ONBOARD_GOALS = [
   { id: 'compare', label: 'Compare answer quality', desc: 'Same task, several models — which reply wins?' },
   { id: 'tool-agent', label: 'Test a tool-using agent', desc: 'Does the agent actually reach for its tools?' },
@@ -902,7 +1087,9 @@ function recommendTemplateId(goal, posture) {
 function onboardTemplates() { return (S.boot && S.boot.notebook_templates) || []; }
 function onboardTemplate() {
   const list = onboardTemplates();
-  const id = S.onboard.override || recommendTemplateId(S.onboard.goal, S.onboard.posture);
+  // nothing selected yet (collapsed / hand-pick states) → the safe default
+  const id = S.onboard.override
+    || recommendTemplateId(S.onboard.goal || 'compare', S.onboard.posture || 'fixture');
   return list.find(t => t.id === id) || list[0] || null;
 }
 // deterministic, offline naming: the template's default slug, suffixed past
@@ -919,20 +1106,33 @@ function setOnboard(key, value) {
 }
 function showOnboarding() {
   if (!S.ws) { toast('pick a workspace first'); return; }
-  S.onboard = { goal: 'compare', posture: 'fixture', override: '', name: '', notes: '', copyFrom: '' };
-  renderOnboarding();
+  S.onboard = freshOnboard();
+  S.mode = 'new';
+  renderPage();
 }
+// the create/proposal flow, embedded as section 1 of the page in 'new' mode —
+// the same engine and markup whether it is the first run or the Nth experiment
 function renderOnboarding() {
+  const host = document.getElementById('details-body');
+  if (!host) return;
   const templates = onboardTemplates();
   if (!templates.length) {
-    $('#main').innerHTML = '<div class="home">No starter templates — CLI: <code>bench templates</code></div>';
+    host.innerHTML = '<div class="home">No starter templates — CLI: <code>bench templates</code></div>';
     return;
   }
   const firstRun = !(S.nbList || []).length;
   const o = S.onboard;
   const t = onboardTemplate();
-  const name = o.name || onboardName(t);
-  const auto = !o.override;
+  const name = o.name || (o.proposal ? o.proposal.name : onboardName(t));
+  const populated = Boolean(o.proposal) || o.expanded;
+  // the one form-level action, two phases: propose first, then confirm-create
+  const primary = o.pending
+    ? '<button class="primary ob-pending" disabled>proposing…</button>'
+    : (!populated && !o.copyFrom
+      ? '<button class="primary" onclick="proposeOnboarding()">Propose setup</button>'
+      : '<button class="primary" onclick="createFromOnboarding()">Create experiment</button>');
+  const again = !o.pending && populated && !o.copyFrom
+    ? '<button class="quiet" onclick="proposeOnboarding()">↻ propose again</button>' : '';
   const goalCards = ONBOARD_GOALS.map(g => `
     <button type="button" class="choice ${o.goal === g.id ? 'selected' : ''}" onclick="setOnboard('goal','${g.id}')">
       <b>${esc(g.label)}</b><span class="d">${esc(g.desc)}</span>
@@ -945,68 +1145,130 @@ function renderOnboarding() {
     ? `<div class="ob-note">live env when flipped: ${esc(t.required_env.join(', '))}</div>` : '';
   const postureNote = t.live
     ? `<div class="ob-note">ships offline on fixture; going live is a one-word <code>provider:</code> edit marked <code># live:</code>.</div>`
-    : (o.posture !== 'fixture'
+    : (o.posture && o.posture !== 'fixture'
       ? `<div class="ob-note">this starter ships offline on fixture — scaffold it, run it green, then flip the <code>provider:</code> lines to go live.</div>`
       : '');
-  $('#main').innerHTML = `
+  // provenance badge: the offline path is *labeled* — never a faked AI proposal
+  const badge = o.proposal
+    ? `<span class="tag ${o.provider === 'offline' ? 'offline' : 'prop'}">${esc(o.label)}</span>` : '';
+  const fallbackNote = o.note ? `<div class="ob-note">${esc(o.note)}</div>` : '';
+  const propNotes = o.proposal ? `
+      <div class="ob-prop-notes">
+        ${o.proposal.rationale ? `<div><b>why</b>${esc(o.proposal.rationale)}</div>` : ''}
+        ${o.proposal.metric_notes ? `<div><b>metrics</b>${esc(o.proposal.metric_notes)}</div>` : ''}
+        ${o.proposal.judge_notes ? `<div><b>judge</b>${esc(o.proposal.judge_notes)}</div>` : ''}
+      </div>` : '';
+  const proposalBody = !populated
+    ? (o.pending
+      ? '<div class="ob-note ob-pending">drafting a proposal from your notes…</div>'
+      : '<div class="ob-note">Nothing selected yet. Describe the experiment above and hit “Propose setup” — the proposal lands here for you to adjust. Or choose by hand.</div>')
+    : `
+      <div class="ob-prop-body">
+        ${fallbackNote}${propNotes}
+        <div class="ob-label" style="margin-top:12px">Testing goal</div>
+        <div class="goal-grid">${goalCards}</div>
+        <div class="ob-label" style="margin-top:12px">Model posture</div>
+        <div class="posture-row">${postureCards}</div>
+        <div class="ob-label" style="margin-top:12px">Starter pattern</div>
+        <div class="ob-starter">
+          <div class="tpl-head">
+            <span class="tpl-title">${esc(t.title)}</span>
+            <span class="tag ${t.live ? 'live' : 'offline'}">${t.live ? 'LIVE' : 'offline'}</span>
+            ${o.override ? '' : '<span class="tag rec">recommended</span>'}
+          </div>
+          <div class="d">${esc(t.description)}</div>
+          ${postureNote}${envLine}
+          <label class="ob-note" style="font-style:normal">pattern:
+            <select onchange="setOnboard('override', this.value)">
+              <option value="">auto — ${esc(recommendTemplateId(o.goal || 'compare', o.posture || 'fixture'))}</option>
+              ${templates.map(x => `<option value="${esc(x.id)}" ${o.override === x.id ? 'selected' : ''}>${esc(x.id)} [${x.live ? 'LIVE' : 'offline'}]</option>`).join('')}
+            </select></label>
+          <div class="ob-cli">CLI equivalent: bench scaffold ${esc(t.id)} --name ${esc(name)}</div>
+        </div>
+      </div>`;
+  host.innerHTML = `
   <div class="onboard">
-    <div class="masthead">
-      <div class="kicker">${firstRun ? 'First run' : 'New project'} · ${esc(S.ws)}</div>
-      <h1>What are you testing?</h1>
-      <div class="sub">describe the workflow — the bench scaffolds a starter notebook that explains itself</div>
-    </div>
-    ${firstRun ? '' : `<button class="quiet" onclick="loadNotebooks()">← back to the project</button>`}
-    <div class="ob-section"><div class="ob-label">Project</div>
+    ${firstRun ? '' : `<button class="quiet" onclick="exitNewMode()">← back to the experiment</button>`}
+    <div class="ob-section"><div class="ob-label">Experiment</div>
       <div class="ob-starter">
         <div class="ob-create-row">
           <label>name <input type="text" id="ob-name" value="${esc(name)}" spellcheck="false" style="font-family:var(--mono)" oninput="S.onboard.name=this.value"></label>
-          <label>or duplicate <select id="ob-copy" onchange="S.onboard.copyFrom=this.value">
+          <label>or duplicate <select id="ob-copy" onchange="S.onboard.copyFrom=this.value; renderOnboarding()">
             <option value="">start new</option>
             ${(S.nbList || []).map(n => `<option value="${esc(n.name)}" ${o.copyFrom === n.name ? 'selected' : ''}>${esc(n.title)} · ${esc(n.name)}</option>`).join('')}
           </select></label>
         </div>
         <label class="ob-note" style="display:block;font-style:normal">what are you testing?
-          <textarea id="ob-notes" rows="4" placeholder="Describe the workflow in your own words." oninput="S.onboard.notes=this.value">${esc(o.notes)}</textarea>
+          <textarea id="ob-notes" rows="4" placeholder="Describe the experiment in your own words." oninput="S.onboard.notes=this.value">${esc(o.notes)}</textarea>
         </label>
-      </div></div>
-    <div class="ob-section"><div class="ob-label">Proposed setup</div>
-      <div class="ob-note">Adjust any part of the proposal before creating the project.</div>
-      <div class="ob-label" style="margin-top:12px">Testing goal</div>
-      <div class="goal-grid">${goalCards}</div></div>
-    <div class="ob-section"><div class="ob-label">Model posture</div>
-      <div class="posture-row">${postureCards}</div></div>
-    <div class="ob-section"><div class="ob-label">Starter pattern</div>
-      <div class="ob-starter">
-        <div class="tpl-head">
-          <span class="tpl-title">${esc(t.title)}</span>
-          <span class="tag ${t.live ? 'live' : 'offline'}">${t.live ? 'LIVE' : 'offline'}</span>
-          ${auto ? '<span class="tag rec">recommended</span>' : ''}
-        </div>
-        <div class="d">${esc(t.description)}</div>
-        ${postureNote}${envLine}
-        <label class="ob-note" style="font-style:normal">pattern:
-          <select onchange="setOnboard('override', this.value)">
-            <option value="">auto — ${esc(recommendTemplateId(o.goal, o.posture))}</option>
-            ${templates.map(x => `<option value="${esc(x.id)}" ${o.override === x.id ? 'selected' : ''}>${esc(x.id)} [${x.live ? 'LIVE' : 'offline'}]</option>`).join('')}
-          </select></label>
         <div class="ob-create-row">
-          <button class="primary" onclick="createFromOnboarding()">Create project</button>
+          ${primary}${again}
           <button class="quiet" onclick="createBlankFromOnboarding()">start blank</button>
         </div>
-        <div class="ob-cli">CLI equivalent: bench scaffold ${esc(t.id)} --name ${esc(name)}</div>
       </div></div>
+    <div class="ob-section">
+      <div class="ob-prop-head">
+        <div class="ob-label">Proposed setup</div>
+        ${badge}
+        ${populated || o.pending ? '' : '<button class="quiet expand" onclick="expandProposal()">choose by hand</button>'}
+      </div>
+      ${proposalBody}
+    </div>
   </div>`;
+}
+function expandProposal() {
+  S.onboard.expanded = true;
+  renderOnboarding();
+}
+// phase one of the form-level action: send the notes to the proposal engine.
+// The response always carries a proposal — on provider error or malformed
+// output the server degrades to the labeled offline suggestion, so the
+// fallback appears in the same round trip.
+async function proposeOnboarding() {
+  const o = S.onboard;
+  const el = $('#ob-notes');
+  const notes = ((el && el.value) || '').trim();
+  if (!notes) { toast('describe what you are testing first — the proposal builds from your notes'); if (el) el.focus(); return; }
+  o.notes = notes;
+  o.pending = true;
+  renderOnboarding();
+  try {
+    const r = await post('/api/authoring-propose', { ws: S.ws, notes });
+    o.proposal = r.proposal; o.provider = r.provider; o.label = r.label; o.note = r.note || '';
+    o.goal = r.proposal.goal; o.posture = r.proposal.posture; o.override = r.proposal.template;
+    if (!o.name.trim()) o.name = r.proposal.name || '';
+    o.expanded = true;
+    toast(r.provider === 'offline' ? 'offline suggestion ready — adjust, then create' : 'proposal ready — adjust anything, then create');
+  } catch (e) { toast(String(e.message || e)); }
+  o.pending = false;
+  renderOnboarding();
+}
+// proposed vs kept, for the corrections log — only when a proposal existed
+function onboardAuthoring(notes, kept) {
+  const o = S.onboard;
+  if (!o.proposal) return undefined;
+  const p = o.proposal;
+  return {
+    notes,
+    proposed: { goal: p.goal, posture: p.posture, template: p.template, name: p.name },
+    kept,
+    provider: o.provider,
+  };
 }
 async function createBlankFromOnboarding() {
   const el = $('#ob-name');
   const name = el && el.value.trim();
-  if (!name) { toast('name the notebook first (lowercase slug)'); if (el) el.focus(); return; }
+  if (!name) { toast('name the experiment first (lowercase slug)'); if (el) el.focus(); return; }
   try {
     const copy = $('#ob-copy');
     const notes = ($('#ob-notes') && $('#ob-notes').value) || '';
-    const r = await post('/api/notebook-create', { ws: S.ws, name, copy_from: copy && copy.value, notes });
+    const o = S.onboard;
+    const r = await post('/api/notebook-create', {
+      ws: S.ws, name, copy_from: copy && copy.value, notes,
+      authoring: onboardAuthoring(notes, { goal: o.goal, posture: o.posture, name }),
+    });
     localStorage.setItem('bench.nb.' + S.ws, r.name);
-    await loadNotebooks(); toast('blank notebook created');
+    await loadNotebooks(); toast('blank experiment created');
   } catch (e) { toast(String(e.message || e)); }
 }
 async function createFromOnboarding() {
@@ -1017,9 +1279,13 @@ async function createFromOnboarding() {
   try {
     const copy = $('#ob-copy');
     const notes = ($('#ob-notes') && $('#ob-notes').value) || '';
+    const o = S.onboard;
+    const kept = copy && copy.value
+      ? { goal: o.goal, posture: o.posture, name }
+      : { goal: o.goal, posture: o.posture, template: t.id, name };
     const r = await post('/api/notebook-create', copy && copy.value
-      ? { ws: S.ws, name, copy_from: copy.value, notes }
-      : { ws: S.ws, template: t.id, name, notes });
+      ? { ws: S.ws, name, copy_from: copy.value, notes, authoring: onboardAuthoring(notes, kept) }
+      : { ws: S.ws, template: t.id, name, notes, authoring: onboardAuthoring(notes, kept) });
     localStorage.setItem('bench.nb.' + S.ws, r.name);
     await loadNotebooks();
     toast(r.live ? `scaffolded ${r.name} — LIVE starter, ships on fixture` : `scaffolded ${r.name} — hit ▶ run all`);
@@ -1050,7 +1316,18 @@ async function runCell(id) {
     const r = await post('/api/run', { ws: S.ws, nb: S.nb, cell: id || undefined, force: Boolean(id), run_id: runId });
     S.notebook = r.notebook;
     if (r.status === 'cancelled') flowLog(`cancelled ${r.run_id}`);
-    if (r.ran.length) r.ran.forEach(cid => flowLog(`ran ${cid}`));
+    if (r.ran.length) r.ran.forEach(cid => {
+      flowLog(`ran ${cid}`);
+      // a loop-back gate ran several passes inside one cell run — one log
+      // line per pass, with its score and verdict
+      const st = (r.notebook.state || {})[cid] || {};
+      const lp = st.output && st.output.loop;
+      if (lp && Array.isArray(lp.passes)) {
+        for (const p of lp.passes) {
+          flowLog(`${cid} pass ${p.n}/${lp.max} · score ${p.score == null ? '—' : p.score} · ${p.pass ? 'pass' : 'fail'}`);
+        }
+      }
+    });
     else if (r.status !== 'cancelled') flowLog(id ? `${id} already fresh` : 'nothing stale');
     toast(r.status === 'cancelled' ? 'run cancelled' : (r.ran.length ? 'ran: ' + r.ran.join(', ') : 'nothing stale'));
   } catch (e) {
@@ -1063,9 +1340,8 @@ async function runCell(id) {
   }
   S.running.delete(key);
   delete S.activeRuns[key];
-  if (S.view === 'journal') loadJournal();
-  else if (S.view === 'results') loadResults();
-  else render();
+  await loadRunData();   // the results + journal sections track every run
+  render();
 }
 
 function makeRunId() {
@@ -1124,17 +1400,10 @@ async function addCell(type, after) {
     const added = r.notebook.cells.map(c => c.id).find(cid => !before.has(cid));
     if (added) {
       S.editing.add(added);
-      if (S.view === 'flow') {
-        S.flow.selected = added;
-        S.flow.inspectorOpen = true;
-        S.flow.editing = true;
-      }
+      S.flow.selected = added;   // the canvas tracks the newest cell too
     }
     render(); toast('added ' + type + ' cell');
-    if (S.view === 'flow' && added && S.flow.editing) {
-      const ta = document.getElementById('flow-ed-' + added);
-      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
-    }
+    if (added) jumpToNotebookCell(added);
   } catch (e) { toast(String(e.message || e)); }
 }
 
@@ -1162,24 +1431,31 @@ async function decideGoldenItem(cellId, set, itemId, status) {
 // ---------------------------------------------------------------------------
 // render — masthead + view dispatch
 // ---------------------------------------------------------------------------
-// Project-first: every view carries the same masthead — the notebook's title
-// with its goal beneath. The view survives only in the small-caps kicker
-// (SPECIMEN · <nb>) and the rail's active state. Absent goal → title only,
+// Experiment-first: ONE page-top masthead — the notebook's title with its
+// goal beneath, constant down the whole scroll. Absent goal → title only,
 // no reserved line, no layout jump; the pencil rides the title instead.
+// In 'new' mode the masthead asks the opening question instead.
 function masthead() {
-  const v = VIEWS[S.view];
-  const kicker = v.kicker + (S.nb ? ' · ' + S.nb : '');
+  if (S.mode === 'new') {
+    const firstRun = !(S.nbList || []).length;
+    return `<div class="masthead">
+      <div class="kicker">${esc((firstRun ? 'First run' : 'New experiment') + (S.ws ? ' · ' + S.ws : ''))}</div>
+      <h1>What are you testing?</h1>
+      <div class="sub">describe the experiment — the bench proposes the setup, you adjust, then create</div>
+    </div>`;
+  }
+  const kicker = 'EXPERIMENT' + (S.nb ? ' · ' + S.nb : '');
   const meta = (S.notebook && S.notebook.meta) || {};
   const title = meta.title || (S.notebook && S.notebook.name) || S.nb || S.ws || 'tl bench';
   const goal = meta.goal ? String(meta.goal) : '';
   const canEdit = Boolean(S.nb && S.notebook);
   const pencil = canEdit && !S.goalEditing
-    ? `<button class="goal-edit" title="${goal ? 'edit the project goal' : 'add a project goal'}" onclick="startGoalEdit()">✎${goal ? '' : ' goal'}</button>`
+    ? `<button class="goal-edit" title="${goal ? 'edit the experiment goal' : 'add an experiment goal'}" onclick="startGoalEdit()">✎${goal ? '' : ' goal'}</button>`
     : '';
   let goalLine = '';
   if (S.goalEditing && canEdit) {
     goalLine = `<div class="goal-form">
-      <input type="text" id="goal-input" value="${esc(goal)}" placeholder="one line: what is this project trying to prove?"
+      <input type="text" id="goal-input" value="${esc(goal)}" placeholder="one line: what is this experiment trying to prove?"
         onkeydown="if(event.key==='Enter')saveGoal();else if(event.key==='Escape')cancelGoalEdit()">
       <button class="primary" onclick="saveGoal()">save</button>
       <button class="quiet" onclick="cancelGoalEdit()">cancel</button>
@@ -1212,32 +1488,78 @@ async function saveGoal() {
   } catch (e) { toast(String(e.message || e)); }
 }
 
-function plate(view) {
-  return masthead() + `<div class="plate"><div class="glyph">❦</div>
-    <p>This plate is still being drawn — the <b>${esc(view)}</b> view arrives with its own spec.</p>
-    <p class="spec">specs/${esc(VIEWS[S.view].spec)}/</p></div>`;
+// ---------------------------------------------------------------------------
+// section 1 — experiment details: the create flow for a NEW experiment,
+// a compact editable summary (name/goal/notes) for an existing one
+// ---------------------------------------------------------------------------
+function renderDetails() {
+  const host = document.getElementById('details-body');
+  if (!host) return;
+  if (S.mode === 'new') { renderOnboarding(); return; }
+  if (!S.notebook) {
+    host.innerHTML = '<div class="plate"><p>Pick an experiment above, or create one with “+ new experiment”.</p></div>';
+    return;
+  }
+  const meta = S.notebook.meta || {};
+  if (S.detailsEditing) {
+    host.innerHTML = `<div class="details-card">
+      <div class="details-head">
+        <span class="chip">experiment</span>
+        <span class="cid">${esc(S.notebook.name || S.nb)}</span>
+      </div>
+      <div class="details-form">
+        <label>name<input type="text" id="det-title" value="${esc(meta.title || '')}" placeholder="a human title for the experiment"></label>
+        <label>goal<input type="text" id="det-goal" value="${esc(meta.goal || '')}" placeholder="one line: what is this experiment trying to prove?"></label>
+        <label>notes<textarea id="det-notes" rows="4" placeholder="what are you testing, in your own words?">${esc(meta.notes || '')}</textarea></label>
+      </div>
+      <div class="details-actions">
+        <button class="primary" onclick="saveDetails()">save</button>
+        <button class="quiet" onclick="S.detailsEditing=false;renderDetails()">cancel</button>
+      </div>
+    </div>`;
+    const el = document.getElementById('det-title');
+    if (el) el.focus();
+    return;
+  }
+  host.innerHTML = `<div class="details-card">
+    <div class="details-head">
+      <span class="chip">experiment</span>
+      <span class="cid">${esc(S.notebook.name || S.nb)}</span>
+      <span class="spacer"></span>
+      <button class="quiet" onclick="S.detailsEditing=true;renderDetails()" title="edit the experiment's name, goal, and notes">✎ edit</button>
+    </div>
+    <div class="row"><b>name</b><span class="val ${meta.title ? '' : 'muted'}">${esc(meta.title || S.nb)}</span></div>
+    <div class="row"><b>goal</b><span class="val ${meta.goal ? '' : 'muted'}">${esc(meta.goal || 'no goal yet — one line: what should this experiment prove?')}</span></div>
+    <div class="row"><b>notes</b><span class="val ${meta.notes ? '' : 'muted'}">${esc(meta.notes || 'no notes — describe the experiment in your own words')}</span></div>
+    <div class="row"><b>cells</b><span class="val mono">${(S.notebook.cells || []).length}</span></div>
+  </div>`;
+}
+async function saveDetails() {
+  const t = document.getElementById('det-title');
+  const g = document.getElementById('det-goal');
+  const n = document.getElementById('det-notes');
+  try {
+    const r = await post('/api/notebook-meta', {
+      ws: S.ws, nb: S.nb,
+      updates: { title: t ? t.value : '', goal: g ? g.value : '', notes: n ? n.value : '' },
+    });
+    S.notebook = r.notebook;
+    S.detailsEditing = false;
+    render(); toast('experiment details saved');
+  } catch (e) { toast(String(e.message || e)); }
 }
 
 // ---------------------------------------------------------------------------
-// results — stat cards + metric scatter
+// section 4 — the all-runs comparison graph sits above one newest-first run
+// accordion. The aggregate scatter answers "what changed across runs"; an
+// expanded run answers the forensic per-run question (candidate summary and
+// per-row evidence) without repeating the aggregate visuals.
 // ---------------------------------------------------------------------------
-async function loadResults() {
-  if (!S.ws) {
-    $('#main').innerHTML = masthead() + '<div class="results-empty"><div class="glyph">❧</div><p>Pick a workspace to open the bench.</p></div>';
-    return;
-  }
-  try {
-    const d = await api('/api/journal?ws=' + encodeURIComponent(S.ws));
-    S.results.runs = d.runs || [];
-    S.results.models = d.models || [];
-    const series = resultsSeriesKeys(S.results.runs);
-    if (!series.includes(S.results.xKey)) S.results.xKey = series[0] || '';
-    if (!series.includes(S.results.yKey)) S.results.yKey = series[1] || series[0] || '';
-    renderResults();
-  } catch (e) {
-    $('#main').innerHTML = masthead() + `<div class="results-empty"><div class="glyph">❧</div>
-      <p>Could not read trial results: ${esc(e.message || e)}</p></div>`;
-  }
+function renderResultsSection() {
+  const host = document.getElementById('results-body');
+  if (!host) return;
+  host.innerHTML = `<div id="journal-block"><div id="results-dash"></div></div>`;
+  renderJournal();
 }
 
 function resultsSeriesKeys(runs) {
@@ -1452,38 +1774,52 @@ function renderScatterSvg(points, xKey, yKey, models, threshold) {
   return svg;
 }
 
-function renderResults() {
+// the aggregate comparison surface: every visible run's candidate points on
+// one scatter, with the shared notebook/model filters and the axis selectors.
+// `runs` is the same filtered subset the accordion below renders, so the two
+// blocks always describe the same slice of the ledger.
+function renderResultsAggregate(runs) {
   const r = S.results;
-  const series = resultsSeriesKeys(r.runs);
-  const points = resultsPoints(r.runs, r.modelFilter);
+  const j = S.journal;
+  const series = resultsSeriesKeys(runs);
+  // effective axes: fall back inside the current subset without clobbering
+  // the remembered choice — clearing a filter restores the wider axes
+  const xKey = series.includes(r.xKey) ? r.xKey : (series[0] || '');
+  const yKey = series.includes(r.yKey) ? r.yKey : (series[1] || series[0] || '');
+  const points = resultsPoints(runs, j.modelFilter);
   const models = [...new Set(points.map(p => p.model))].sort();
   const ths = notebookThresholds();
   const threshold = ths.length ? ths[0].threshold : null;
-  let html = masthead();
+  const runCount = new Set(points.map(p => p.run_id)).size;
 
-  if (!(r.runs || []).length) {
-    html += `<div class="results-empty"><div class="glyph">❧</div>
-      <p>No trials on the ledger yet — run an eval cell, then return to the bench.</p>
-      <p class="hint">Scores arrive from <span class="mono">_metrics/bench-log.jsonl</span>.</p></div>`;
-    $('#main').innerHTML = html;
-    return;
-  }
-
-  html += `<div class="results-bar">
-    <div class="hint">${S.nb ? esc(S.nb) : 'all notebooks'} · ${points.length} candidate×run point${points.length === 1 ? '' : 's'}</div>
+  let html = `<div class="results-bar">
+    <div class="hint">${points.length} candidate×run point${points.length === 1 ? '' : 's'} · ${runCount} run${runCount === 1 ? '' : 's'} on the graph</div>
     <div class="filters">
-      <label>model <select onchange="setResultsFilter(this.value)">
+      <label>notebook <select onchange="setJournalFilter('nb', this.value)" title="filter runs by notebook">
+        <option value="">All notebooks</option>
+        ${(j.notebooks || []).map(n => `<option value="${esc(n)}" ${j.nbFilter === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}
+      </select></label>
+      <label>model <select onchange="setJournalFilter('model', this.value)" title="filter runs by model">
         <option value="">All models</option>
-        ${(r.models || []).map(m => `<option value="${esc(m)}" ${r.modelFilter === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
+        ${(j.models || []).map(m => `<option value="${esc(m)}" ${j.modelFilter === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
       </select></label>
       <label>X <select onchange="setResultsAxis('x', this.value)">
-        ${series.map(k => `<option value="${esc(k)}" ${r.xKey === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}
+        ${series.map(k => `<option value="${esc(k)}" ${xKey === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}
       </select></label>
       <label>Y <select onchange="setResultsAxis('y', this.value)">
-        ${series.map(k => `<option value="${esc(k)}" ${r.yKey === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}
+        ${series.map(k => `<option value="${esc(k)}" ${yKey === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}
       </select></label>
     </div>
   </div>`;
+
+  // nothing matches the filters: keep the bar (the way back out) and let the
+  // run-list message below say so once, honestly
+  if (!runs.length) return html;
+  if (!series.length) {
+    return html + `<div class="results-empty"><div class="glyph">❧</div>
+      <p>These runs recorded no numeric metrics to plot.</p>
+      <p class="hint">Judge means and metric numbers land here once an eval cell reports them.</p></div>`;
+  }
 
   const cards = resultsStats(points);
   if (cards.length) {
@@ -1496,50 +1832,26 @@ function renderResults() {
       </div>`).join('') + '</div>';
   }
 
-  const title = (r.xKey && r.yKey) ? `${r.xKey} vs ${r.yKey}` : 'Scatter';
+  const title = (xKey && yKey) ? `${xKey} vs ${yKey} — all runs` : 'All runs';
   html += `<div class="scatter-wrap"><div class="scatter-head">
     <h2>${esc(title)}</h2>
     <div class="scatter-legend">${models.map(m =>
       `<span style="color:${modelColor(m, models)}"><i></i>${esc(m)}</span>`).join('')}</div>
-  </div>${renderScatterSvg(points, r.xKey, r.yKey, models, threshold)}</div>`;
-
-  $('#main').innerHTML = html;
+  </div>${renderScatterSvg(points, xKey, yKey, models, threshold)}</div>`;
+  return html;
 }
 
-function setResultsFilter(value) {
-  S.results.modelFilter = value || '';
-  renderResults();
-}
 function setResultsAxis(which, value) {
   if (which === 'x') S.results.xKey = value;
   if (which === 'y') S.results.yKey = value;
-  renderResults();
+  renderJournal();
 }
 
 // ---------------------------------------------------------------------------
-// journal — every eval run, catalogued
+// journal — every eval run, catalogued newest-first below the aggregate graph.
+// The notebook/model filters (rendered in the aggregate bar) scope the graph
+// and this list to the same subset.
 // ---------------------------------------------------------------------------
-async function loadJournal() {
-  if (!S.ws) {
-    $('#main').innerHTML = masthead() + '<div class="journal-empty"><div class="glyph">❧</div><p>Pick a workspace to open the journal.</p></div>';
-    return;
-  }
-  try {
-    const d = await api('/api/journal?ws=' + encodeURIComponent(S.ws));
-    S.journal.runs = d.runs || [];
-    S.journal.notebooks = d.notebooks || [];
-    S.journal.models = d.models || [];
-    // keep detail only if that run is still present
-    if (S.journal.openId && !S.journal.runs.some(r => r.run_id === S.journal.openId)) {
-      S.journal.openId = null; S.journal.detail = null;
-    }
-    renderJournal();
-  } catch (e) {
-    $('#main').innerHTML = masthead() + `<div class="journal-empty"><div class="glyph">❧</div>
-      <p>Could not read the journal: ${esc(e.message || e)}</p></div>`;
-  }
-}
-
 function filteredJournalRuns() {
   const j = S.journal;
   return (j.runs || []).filter(r => {
@@ -1587,39 +1899,43 @@ function formatRunTime(run) {
 }
 
 function renderJournal() {
+  const host = document.getElementById('results-dash');
+  if (!host) return;
+  if (S.runDataError) {
+    host.innerHTML = `<div class="journal-empty"><div class="glyph">❧</div>
+      <p>Could not read the journal: ${esc(S.runDataError)}</p></div>`;
+    return;
+  }
   const j = S.journal;
   const runs = filteredJournalRuns();
-  let html = masthead();
-  html += `<div class="journal-bar">
-    <div class="journal-count"><b>${esc(journalWindowLabel(runs))}</b></div>
-    <div class="journal-filters">
-      <select id="j-nb" onchange="setJournalFilter('nb', this.value)" title="filter by notebook">
-        <option value="">All notebooks</option>
-        ${(j.notebooks || []).map(n => `<option value="${esc(n)}" ${j.nbFilter === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}
-      </select>
-      <select id="j-model" onchange="setJournalFilter('model', this.value)" title="filter by model">
-        <option value="">All models</option>
-        ${(j.models || []).map(m => `<option value="${esc(m)}" ${j.modelFilter === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
-      </select>
-    </div>
-  </div>`;
+  let html = '';
 
   if (!(j.runs || []).length) {
     html += `<div class="journal-empty"><div class="glyph">❧</div>
       <p>The journal is blank — no eval runs recorded yet.</p>
-      <p class="hint">Run an eval cell from the field notebook; every trial lands here, catalogued newest first.</p>
+      <p class="hint">Run an eval cell from the field notebook; every trial lands here, catalogued newest first.
+        Scores arrive from <span class="mono">_metrics/bench-log.jsonl</span>.</p>
     </div>`;
-    $('#main').innerHTML = html;
+    host.innerHTML = html;
     return;
   }
+
+  // the aggregate all-runs graph sits above the run accordion; both draw
+  // from the same filtered subset
+  html += renderResultsAggregate(runs);
+
   if (!runs.length) {
     html += `<div class="journal-empty"><div class="glyph">❧</div>
       <p>No runs match these filters.</p>
       <p class="hint">Clear a chip, or run another eval — the ledger only shows what you ask for.</p>
     </div>`;
-    $('#main').innerHTML = html;
+    host.innerHTML = html;
     return;
   }
+
+  html += `<div class="journal-bar">
+    <div class="journal-count"><b>${esc(journalWindowLabel(runs))}</b><span class="hint"> · newest first — expand a run for its evidence</span></div>
+  </div>`;
 
   html += `<table class="journal-table"><thead><tr>
     <th>Run id</th><th>Status</th><th>Notebook</th><th>Model</th><th>Score</th><th>Items</th><th>Time</th>
@@ -1645,13 +1961,16 @@ function renderJournal() {
     }
   });
   html += '</tbody></table>';
-  $('#main').innerHTML = html;
+  host.innerHTML = html;
 }
 
 function renderJournalDetail(detail) {
   if (!detail) return `<div class="journal-detail"><span class="spin">◌</span> loading run…</div>`;
   if (detail.error) return `<div class="journal-detail"><div class="err">${esc(detail.error)}</div></div>`;
-  // reuse the eval output renderer — shape matches a live eval cell output
+  // reuse the eval output renderer — shape matches a live eval cell output.
+  // The candidate summary table and per-row evidence are the run's own story;
+  // the aggregate scatter and scorecards above the accordion are NOT repeated
+  // here (cross-run comparison lives in one place).
   const fakeOut = {
     run_id: detail.run_id,
     rows: detail.rows,
@@ -1670,10 +1989,20 @@ function renderJournalDetail(detail) {
   </div>`;
 }
 
-function setJournalFilter(kind, value) {
+async function setJournalFilter(kind, value) {
   if (kind === 'nb') S.journal.nbFilter = value || '';
   if (kind === 'model') S.journal.modelFilter = value || '';
-  // closing detail when filters hide it is handled by filtered list
+  const next = filteredJournalRuns()[0];
+  if (!next) {
+    S.journal.openId = null;
+    S.journal.detail = null;
+    renderJournal();
+    return;
+  }
+  if (next.run_id !== S.journal.openId) {
+    await openJournalRun(null, next.notebook, next.run_id);
+    return;
+  }
   renderJournal();
 }
 
@@ -1791,14 +2120,21 @@ function flowSize(pos) {
   return { w: Math.max(780, maxX + 270), h: Math.max(540, maxY + 170) };
 }
 
-// A control node fresh off the palette has an empty config — switch/map/
-// retry/catch/tool ship no starter fields, so there is nothing to run yet
-// and nothing wrong. Grey "unconfigured" beats red: errors mean "ran and
-// failed" or "config invalid", not "you just created me". Display-side only;
-// the moment any field is set, the normal states take over.
-const CONTROL_TYPES = new Set(['switch', 'map', 'retry', 'catch', 'tool']);
+// Reference-dependent control nodes arrive with comment-only starters. Those
+// comments explain the needed wiring but parse as an empty config, so grey
+// "unconfigured" still means placeholder-only rather than a failed run.
+// Tool nodes have a runnable local echo starter and therefore skip this state.
+const CONTROL_TYPES = new Set(['switch', 'map', 'retry', 'catch', 'gate', 'tool']);
 function isUnconfigured(cell) {
   return CONTROL_TYPES.has(cell.type) && !Object.keys(cell.config || {}).length;
+}
+
+// the loop-back a gate declares, if any (mirror of lib/notebook.js loopBackOf)
+function flowLoopOf(cell) {
+  if (!cell || cell.type !== 'gate') return null;
+  const l = cell.config && cell.config.loop;
+  if (!l || typeof l !== 'object' || Array.isArray(l) || typeof l.back_to !== 'string' || !l.back_to) return null;
+  return { back_to: l.back_to, max: Number(l.max) || 0 };
 }
 
 function flowStatus(cell) {
@@ -1819,6 +2155,11 @@ function cellSecondary(cell) {
     return [c.provider, c.model].filter(Boolean).join('/') || c.kind || 'model';
   }
   if (cell.type === 'metric') return c.kind || 'metric';
+  if (cell.type === 'gate') {
+    const lp = flowLoopOf(cell);
+    if (lp) return `↺ ${lp.back_to} · until pass · max ${lp.max}`;
+    return (c.expr != null ? 'expr gate' : 'judge gate') + (c.input ? ` on ${c.input}` : '');
+  }
   if (cell.type === 'golden') return c.set || 'golden set';
   if (cell.type === 'data') return c.source || `${Array.isArray(c.rows) ? c.rows.length : 0} rows`;
   if (cell.type === 'prompt') return c.template ? 'template' : 'prompt';
@@ -1831,17 +2172,18 @@ function cellSecondary(cell) {
 // every cell-type glyph resolves to a <symbol> in the icon-defs sheet; unknown
 // types fall back to the plain #ic-cell frame. cls() guards the id, so the
 // returned markup is safe to inline unescaped.
-const CELL_ICON_IDS = new Set(['note', 'data', 'prompt', 'agent', 'metric', 'judge', 'golden', 'eval', 'annotate', 'switch', 'map', 'retry', 'catch', 'tool']);
+const CELL_ICON_IDS = new Set(['note', 'data', 'prompt', 'agent', 'metric', 'judge', 'golden', 'eval', 'annotate', 'switch', 'map', 'retry', 'catch', 'gate', 'tool']);
 function cellIcon(type) {
   const id = CELL_ICON_IDS.has(type) ? cls(type) : 'cell';
-  return `<svg class="type-icon" aria-hidden="true"><use href="#ic-${id}"/></svg>`;
+  return `<svg class="type-icon ti-${id}" aria-hidden="true"><use href="#ic-${id}"/></svg>`;
 }
 
 function renderFlowEdges(pos, size) {
   const graph = S.notebook.graph || { deps: {} };
   const byId = Object.fromEntries((S.notebook.cells || []).map(c => [c.id, c]));
   const selected = S.flow.selected;
-  let svg = `<svg class="flow-edges" viewBox="0 0 ${size.w} ${size.h}" aria-hidden="true">`;
+  let svg = `<svg class="flow-edges" viewBox="0 0 ${size.w} ${size.h}" aria-hidden="true">
+    <defs><marker id="loop-arrow" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="loop-arrow-head" d="M0.5 0.8 7 4 0.5 7.2z"/></marker></defs>`;
   for (const [to, deps] of Object.entries(graph.deps || {})) {
     for (const from of deps || []) {
       if (!pos[from] || !pos[to]) continue;
@@ -1853,6 +2195,20 @@ function renderFlowEdges(pos, size) {
       const chain = toCell && toCell.config && toCell.config.input_from === from;
       svg += `<path class="flow-edge ${chain ? 'chain' : ''} ${hot ? 'hot' : ''}" d="M ${x1} ${y1} C ${x1 + gap} ${y1}, ${x2 - gap} ${y2}, ${x2} ${y2}"/>`;
     }
+  }
+  // loop-back edges: gate ↺ back_to — metadata, not graph edges, drawn as a
+  // SOLID distinct backward arc under the nodes with the guard spelled out
+  for (const c of (S.notebook.cells || [])) {
+    const lp = flowLoopOf(c);
+    if (!lp || !pos[c.id] || !pos[lp.back_to]) continue;
+    const hot = selected === c.id || selected === lp.back_to;
+    const x1 = pos[c.id].x + 60, y1 = pos[c.id].y + 84;
+    const x2 = pos[lp.back_to].x + 130, y2 = pos[lp.back_to].y + 84;
+    const dip = Math.max(y1, y2) + 44 + Math.min(36, Math.abs(x1 - x2) / 10);
+    const midX = (x1 + x2) / 2;
+    svg += `<path class="flow-edge loop ${hot ? 'hot' : ''}" marker-end="url(#loop-arrow)"
+      d="M ${x1} ${y1} C ${x1 + 10} ${dip}, ${x2 - 10} ${dip}, ${x2} ${y2 + 6}"/>`;
+    svg += `<text class="loop-label ${hot ? 'hot' : ''}" x="${midX}" y="${dip - 6}" text-anchor="middle">until pass · max ${esc(String(lp.max || '?'))}</text>`;
   }
   const connecting = S.flow.connect;
   if (connecting && pos[connecting.from] && connecting.point) {
@@ -1871,9 +2227,9 @@ function renderFlowNode(cell, pos) {
   const selected = S.flow.selected === cell.id;
   return `<div class="flow-node ${selected ? 'selected' : ''}" id="flow-${esc(cell.id)}"
     data-id="${esc(cell.id)}" style="left:${pos.x}px;top:${pos.y}px"
-    onclick="selectFlowNode('${esc(cell.id)}')" onpointerdown="startFlowDrag(event,'${esc(cell.id)}')">
+    onclick="selectFlowNode('${esc(cell.id)}')" ondblclick="jumpToNotebookCell('${esc(cell.id)}')" onpointerdown="startFlowDrag(event,'${esc(cell.id)}')">
     <div class="node-top">
-      <span class="node-icon">${cellIcon(cell.type)}</span>
+      <span class="node-icon t-${cls(cell.type)}">${cellIcon(cell.type)}</span>
       <span class="node-id">${esc(cell.id)}</span>
       <span class="node-dot ${st.cls}" title="${esc(st.label)}"></span>
     </div>
@@ -1882,118 +2238,51 @@ function renderFlowNode(cell, pos) {
   </div>`;
 }
 
+// slim inspector: status, wiring, run — deep configuration left the canvas
+// for the notebook section; "→ configure in notebook" is the bridge (and a
+// node double-click takes the same jump)
 function renderFlowInspector() {
   if (!S.flow.inspectorOpen) return '';
   const cells = flowOrderedCells();
   const selected = cells.find(c => c.id === S.flow.selected) || cells.find(c => c.type !== 'note') || cells[0];
-  const closeBtn = `<button class="quiet insp-close" title="close inspector — click any node to reopen" onclick="S.flow.inspectorOpen=false;S.flow.editing=false;renderFlow()">×</button>`;
+  const closeBtn = `<button class="quiet insp-close" title="close inspector — click any node to reopen" onclick="S.flow.inspectorOpen=false;renderFlow()">×</button>`;
   if (!selected) return `<aside class="flow-inspector"><div class="insp-head"><h2>Inspector</h2>${closeBtn}</div><div class="meta">Select a node</div><div class="meta">Click a node to inspect</div></aside>`;
   S.flow.selected = selected.id;
-  const editing = S.flow.editing;
   const st = selected.type === 'note' ? null : ((S.notebook.state || {})[selected.id] || {});
   const status = flowStatus(selected);
   const deps = ((S.notebook.graph && S.notebook.graph.deps[selected.id]) || []).join(', ') || 'none';
   const rdeps = ((S.notebook.graph && S.notebook.graph.rdeps[selected.id]) || []).join(', ') || 'none';
-  const cfg = selected.type === 'note' ? { text: selected.text || '' } : (selected.config || {});
-  const last = st ? {
-    state: status.label,
-    ran_at: st.ran_at || null,
-    stale: Boolean(st.stale),
-    error: st.error || null,
-    output: st.output ? '(output recorded)' : null,
-  } : { state: 'not runnable' };
-  const editBody = selected.type === 'note'
-    ? `<textarea id="flow-ed-${esc(selected.id)}" rows="10" placeholder="note text…">${esc(selected.text || '')}</textarea>`
-    : `<textarea id="flow-ed-${esc(selected.id)}" rows="14" spellcheck="false">${esc(selected.raw || '')}</textarea>`;
-  const body = editing
-    ? `<h3>Edit</h3>${editBody}
-       <div class="insp-actions">
-         <button class="primary" onclick="saveFlowCell('${esc(selected.id)}')">save</button>
-         <button onclick="cancelFlowEdit()">cancel</button>
-       </div>`
-    : `${renderSchemaEditor(selected)}
-       <h3>Last run</h3><pre class="block">${esc(JSON.stringify(last, null, 2))}</pre>
-       <div class="insp-actions">
-         <button onclick="startFlowEdit()">✎ edit</button>
-         <button onclick="duplicateFlowCell('${esc(selected.id)}')">duplicate</button>
-         <button class="quiet" onclick="deleteFlowCell('${esc(selected.id)}')">delete</button>
-       </div>`;
+  const loopCfg = flowLoopOf(selected);
   return `<aside class="flow-inspector">
     <div class="insp-head"><h2>${esc(selected.id)}</h2>${closeBtn}</div>
-    <div class="meta">${esc(selected.type)} · deps: ${esc(deps)} · downstream: ${esc(rdeps)}</div>
+    <div class="meta">${esc(selected.type)} · deps: ${esc(deps)} · downstream: ${esc(rdeps)}${loopCfg ? ` · loops to ${esc(loopCfg.back_to)} (max ${esc(String(loopCfg.max))})` : ''}</div>
     <div class="status-line"><span class="node-dot ${status.cls}"></span>${esc(status.label)}${st && st.ran_at ? ' · ' + esc(ago(st.ran_at)) : ''}</div>
-    <button class="primary" onclick="runCell('${esc(selected.id)}')" ${selected.type === 'note' || editing || S.running.has(selected.id) || S.running.has('__all__') ? 'disabled' : ''}>${S.running.has(selected.id) ? '<span class="spin">◌</span> running' : '▶ run this cell'}</button>
-    ${body}
+    ${renderInspectorPasses(selected, st)}
+    <button class="primary" onclick="runCell('${esc(selected.id)}')" ${selected.type === 'note' || S.running.has(selected.id) || S.running.has('__all__') ? 'disabled' : ''}>${S.running.has(selected.id) ? '<span class="spin">◌</span> running' : '▶ run this cell'}</button>
+    <button class="insp-jump" onclick="jumpToNotebookCell('${esc(selected.id)}')" title="scroll to this cell's full editor in the notebook section">→ configure in notebook</button>
+    <div class="insp-actions">
+      <button class="quiet" onclick="duplicateFlowCell('${esc(selected.id)}')">duplicate</button>
+      <button class="quiet" onclick="deleteFlowCell('${esc(selected.id)}')">delete</button>
+    </div>
   </aside>`;
 }
 
-function schemaFields(type) {
-  return ({
-    data: ['file', 'golden', 'limit', 'needs'],
-    prompt: ['data', 'template', 'system', 'needs'],
-    agent: ['provider', 'model', 'prompt', 'data', 'input_from', 'input_path', 'max_turns', 'needs'],
-    metric: ['kind', 'expr', 'threshold', 'needs'],
-    judge: ['kind', 'provider', 'model', 'dimensions', 'rubric', 'scale', 'threshold', 'needs'],
-    golden: ['set', 'provider', 'model', 'seed_data', 'count', 'instructions', 'needs'],
-    eval: ['data', 'candidates', 'metrics', 'judges', 'limit', 'needs'],
-    annotate: ['source', 'golden', 'labels', 'scale', 'instructions', 'needs'],
-    switch: ['input', 'default', 'needs'],
-    map: ['input', 'filter', 'expr', 'needs'],
-    retry: ['target', 'attempts', 'needs'],
-    catch: ['try', 'fallback', 'needs'],
-  })[type] || ['needs'];
-}
-
-function renderSchemaEditor(cell) {
-  if (cell.type === 'note') return `<h3>Config</h3><pre class="block">${esc(JSON.stringify({ text: cell.text || '' }, null, 2))}</pre>`;
-  const cfg = cell.config || {};
-  const fields = schemaFields(cell.type);
-  const rows = fields.map(key => {
-    const v = cfg[key];
-    const value = Array.isArray(v) ? v.join(', ') : (v == null ? '' : String(v));
-    const tag = ['template', 'system', 'rubric', 'instructions', 'expr', 'filter'].includes(key) ? 'textarea' : 'input';
-    const input = tag === 'textarea'
-      ? `<textarea id="schema-${esc(cell.id)}-${esc(key)}" rows="4">${esc(value)}</textarea>`
-      : `<input id="schema-${esc(cell.id)}-${esc(key)}" value="${esc(value)}">`;
-    return `<div class="field-row"><label>${esc(key)}</label>${input}</div>`;
-  }).join('');
-  return `<h3>Fields</h3><div class="field-grid">${rows}</div>
-    <div class="insp-actions">
-      <button class="primary" onclick="saveFlowFields('${esc(cell.id)}')">save fields</button>
-    </div>
-    ${renderConnectEditor(cell)}
-    <h3>Config</h3><pre class="block">${esc(JSON.stringify(cfg, null, 2))}</pre>`;
-}
-
-function renderConnectEditor(cell) {
-  if (cell.type === 'note') return '';
-  const cells = flowOrderedCells().filter(c => c.id !== cell.id && c.type !== 'note');
-  const options = cells.map(c => `<option value="${esc(c.id)}">${esc(c.id)} · ${esc(c.type)}</option>`).join('');
-  const fields = refFieldsFor(cell.type).filter(f => !f.includes('.'));
-  const fieldOptions = ['auto', ...fields].map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
-  return `<h3>Connect</h3>
-    <div class="connect-row">
-      <div class="field-row"><label>from</label><select id="connect-from-${esc(cell.id)}">${options}</select></div>
-      <div class="field-row"><label>field</label><select id="connect-field-${esc(cell.id)}">${fieldOptions}</select></div>
-      <button onclick="connectFlowCell('${esc(cell.id)}')" ${cells.length ? '' : 'disabled'}>connect</button>
-    </div>`;
-}
-
-function refFieldsFor(type) {
-  return ({
-    data: ['needs'],
-    prompt: ['data', 'needs'],
-    agent: ['prompt', 'data', 'needs'],
-    metric: ['needs'],
-    judge: ['needs'],
-    golden: ['seed_data', 'needs'],
-    eval: ['data', 'candidates', 'metrics', 'judges', 'needs'],
-    annotate: ['source', 'golden', 'needs'],
-    switch: ['input', 'default', 'needs'],
-    map: ['input', 'needs'],
-    retry: ['target', 'needs'],
-    catch: ['try', 'fallback', 'needs'],
-  })[type] || ['needs'];
+// per-pass scores for a loop-back gate's last run — rationale (model-written
+// text) rides the title attribute, esc()'d like every dynamic string
+function renderInspectorPasses(cell, st) {
+  if (!cell || cell.type !== 'gate' || !st) return '';
+  const lp = st.output && st.output.loop;
+  if (!lp || !Array.isArray(lp.passes) || !lp.passes.length) return '';
+  const rows = lp.passes.map(p =>
+    `<div class="ip-row" title="${esc(p.rationale || '')}">
+      <span class="ip-n">pass ${esc(String(p.n))}</span>
+      <span class="ip-score">${p.score == null ? '—' : esc(String(p.score))}</span>
+      <span class="verdict ${p.pass ? 'pass' : 'fail'}">${p.pass ? 'pass' : 'fail'}</span>
+    </div>`).join('');
+  return `<div class="insp-passes">
+    <div class="ip-head">loop · ${esc(String(lp.passes.length))} of max ${esc(String(lp.max))} passes</div>
+    ${rows}
+  </div>`;
 }
 
 function renderRunLog() {
@@ -2006,8 +2295,10 @@ function renderRunLog() {
 }
 
 function renderFlow() {
+  const host = document.getElementById('flow-body');
+  if (!host) return;
   const nb = S.notebook;
-  if (!nb) { $('#main').innerHTML = masthead() + '<div class="plate"><p>Pick a notebook to draw the specimen plate.</p></div>'; return; }
+  if (!nb) { host.innerHTML = '<div class="plate"><p>Pick an experiment to draw its flow.</p></div>'; return; }
   const cells = flowOrderedCells();
   const pos = flowPositions();
   const size = flowSize(pos);
@@ -2021,69 +2312,57 @@ function renderFlow() {
     ${(S.boot.cell_types || []).map(t =>
       `<button type="button" class="pal-btn" data-type="${esc(t)}" aria-label="add ${esc(t)} cell" onclick="addFlowCell('${esc(t)}')">${cellIcon(t)}</button>`).join('')}
   </nav>`;
-  let html = `<div class="flow-shell">${masthead()}`;
+  let html = `<div class="flow-shell">`;
   if (nb.graph && nb.graph.cycle && nb.graph.cycle.length) {
     html += `<div class="out"><span class="err">dependency cycle: ${esc(nb.graph.cycle.join(', '))}</span></div>`;
   }
   html += `<div class="flow-board${S.flow.inspectorOpen ? '' : ' no-insp'}">${palette}<section class="flow-stage"><div class="flow-plane" id="flow-plane" style="width:${size.w}px;height:${size.h}px">
     ${renderFlowEdges(pos, size)}
     ${cells.map(c => renderFlowNode(c, pos[c.id])).join('')}
-    ${leadingNote ? `<div class="flow-note-card" tabindex="0" onclick="selectFlowNode('${esc(leadingNote.id)}')"><div class="label">PLATE · SPECIMEN</div><div class="body">${mdLite(clip(leadingNote.text, 260))}</div></div>` : ''}
+    ${leadingNote ? `<div class="flow-note-card" tabindex="0" onclick="selectFlowNode('${esc(leadingNote.id)}')"><div class="label">NOTES</div><div class="body">${mdLite(clip(leadingNote.text, 260))}</div></div>` : ''}
+    ${renderLoopPrompt(size)}
     <button type="button" class="flow-relayout" title="re-lay-out — tidy the graph" aria-label="re-lay-out — tidy the graph" onclick="relayoutFlow()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-5V2"/><path d="M4 17h5v5"/><path d="M19 12a7 7 0 0 0-12-5L4 10"/><path d="M5 12a7 7 0 0 0 12 5l3-3"/></svg></button>
   </div></section>${renderFlowInspector()}</div>
   ${renderRunLog()}</div>`;
-  $('#main').innerHTML = html;
+  host.innerHTML = html;
+}
+
+// the make-loop-back popover: a gate's connector was dropped on an earlier
+// node — confirm the guard ("until pass") and pick the pass cap
+function renderLoopPrompt(size) {
+  const p = S.flow.loopPrompt;
+  if (!p) return '';
+  const x = Math.max(8, Math.min(p.x, (size.w || 780) - 240));
+  const y = Math.max(8, Math.min(p.y, (size.h || 540) - 150));
+  return `<div class="flow-loop-prompt" style="left:${x}px;top:${y}px">
+    <div class="lp-title">make loop-back</div>
+    <div class="lp-sub">re-run ${esc(p.target)} → ${esc(p.gate)} while the gate fails</div>
+    <label>until pass · max <input id="loop-max-input" type="number" min="1" max="5" step="1" value="${esc(String(p.max))}"> passes</label>
+    <div class="lp-actions">
+      <button class="primary" onclick="confirmLoopBack()">make loop-back</button>
+      <button class="quiet" onclick="cancelLoopBack()">cancel</button>
+    </div>
+  </div>`;
 }
 
 function selectFlowNode(id) {
-  if (S.flow.editing && S.flow.selected !== id) S.flow.editing = false;
   S.flow.selected = id;
   S.flow.inspectorOpen = true;   // clicking a node is the way back in after ✕
   renderFlow();
 }
 
-function startFlowEdit() {
-  if (!S.flow.selected) return;
-  S.flow.editing = true;
-  S.flow.inspectorOpen = true;
-  renderFlow();
-  const ta = document.getElementById('flow-ed-' + S.flow.selected);
-  if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
-}
-
-function cancelFlowEdit() {
-  S.flow.editing = false;
-  renderFlow();
-}
-
-async function saveFlowCell(id) {
-  const cell = S.notebook.cells.find(c => c.id === id);
-  const ta = document.getElementById('flow-ed-' + id);
-  if (!cell || !ta) return;
-  await saveCellValue(cell, ta.value, () => {
-    S.flow.editing = false;
-    S.flow.selected = id;
-    S.flow.inspectorOpen = true;
-  });
-}
-
-async function saveFlowFields(id) {
-  const cell = S.notebook.cells.find(c => c.id === id);
-  if (!cell || cell.type === 'note') return;
-  const updates = {};
-  for (const key of schemaFields(cell.type)) {
-    const el = document.getElementById('schema-' + id + '-' + key);
-    if (el) updates[key] = el.value;
-  }
-  try {
-    const r = await post('/api/cell-config', { ws: S.ws, nb: S.nb, id, updates });
-    S.notebook = r.notebook;
-    S.flow.selected = id;
-    S.flow.inspectorOpen = true;
-    S.flow.editing = false;
-    toast('fields saved');
-    render();
-  } catch (e) { toast(String(e.message || e)); }
+// the canvas → notebook bridge: scroll to the cell's card in section 3 and
+// flash it — the notebook section owns all deep configuration now
+function jumpToNotebookCell(id) {
+  const el = document.getElementById('cell-' + id);
+  if (!el) return;
+  spySuppressUntil = Date.now() + 900;
+  setActiveSection('notebook');
+  if (location.hash !== '#notebook') history.replaceState(null, '', '#notebook');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('flash');
+  clearTimeout(el._flashT);
+  el._flashT = setTimeout(() => el.classList.remove('flash'), 1600);
 }
 
 async function duplicateFlowCell(id) {
@@ -2096,27 +2375,9 @@ async function duplicateFlowCell(id) {
       positions[r.id] = { x: anchor.x + 32, y: anchor.y + 32 };
       S.flow.selected = r.id;
       S.flow.inspectorOpen = true;
-      S.flow.editing = false;
       await saveFlowLayout(positions);
     }
     toast('duplicated');
-    render();
-  } catch (e) { toast(String(e.message || e)); }
-}
-
-async function connectFlowCell(to) {
-  const fromEl = document.getElementById('connect-from-' + to);
-  const fieldEl = document.getElementById('connect-field-' + to);
-  const from = fromEl && fromEl.value;
-  const field = fieldEl && fieldEl.value !== 'auto' ? fieldEl.value : '';
-  if (!from) return;
-  try {
-    const r = await post('/api/cell-connect', { ws: S.ws, nb: S.nb, from, to, field });
-    S.notebook = r.notebook;
-    S.flow.selected = to;
-    S.flow.inspectorOpen = true;
-    S.flow.editing = false;
-    toast('connected ' + from + ' → ' + to);
     render();
   } catch (e) { toast(String(e.message || e)); }
 }
@@ -2133,7 +2394,6 @@ async function addFlowCell(type) {
     const added = r.notebook.cells.map(c => c.id).find(cid => !before.has(cid));
     if (added) {
       S.flow.selected = added;
-      S.flow.editing = true;
       S.flow.inspectorOpen = true;
       const positions = currentFlowPositionsFromDom();
       if (!positions[added]) {
@@ -2141,9 +2401,12 @@ async function addFlowCell(type) {
         positions[added] = { x: anchor.x + 32, y: anchor.y + 32 };
         await saveFlowLayout(positions);
       }
+      S.editing.add(added);   // its editor opens in the notebook section
     }
     toast('added ' + type + ' cell');
     render();
+    // configuration happens in the notebook — take the palette user there
+    if (added) jumpToNotebookCell(added);
   } catch (e) { toast(String(e.message || e)); }
 }
 
@@ -2155,7 +2418,6 @@ async function deleteFlowCell(id) {
     const r = await post('/api/cell-delete', { ws: S.ws, nb: S.nb, id });
     S.notebook = r.notebook;
     if (S.flow.selected === id) S.flow.selected = null;
-    S.flow.editing = false;
     await saveFlowLayout(positions);
     toast('deleted');
     render();
@@ -2245,6 +2507,7 @@ function startFlowConnect(ev, from) {
   const finish = async e => {
     setTarget(e);
     const target = S.flow.connect && S.flow.connect.target;
+    const dropPoint = S.flow.connect && S.flow.connect.point;
     if (pointer && port.hasPointerCapture(e.pointerId)) port.releasePointerCapture(e.pointerId);
     const targetEl = pointer ? port : window;
     targetEl.removeEventListener(pointer ? 'pointermove' : 'mousemove', setTarget);
@@ -2254,6 +2517,19 @@ function startFlowConnect(ev, from) {
     S.flow.connect = null;
     redrawFlowEdges();
     if (!target) return;
+    // dropping a GATE's connector on an EARLIER node (an ancestor) used to be
+    // the cycle-error path — now it offers the loop-back instead
+    const fromCell = (S.notebook.cells || []).find(c => c.id === from);
+    if (fromCell && fromCell.type === 'gate' && isFlowAncestor(target, from)) {
+      const existing = flowLoopOf(fromCell);
+      S.flow.loopPrompt = {
+        gate: from, target,
+        max: (existing && existing.max) || 3,
+        x: (dropPoint && dropPoint.x) || 60, y: (dropPoint && dropPoint.y) || 60,
+      };
+      renderFlow();
+      return;
+    }
     try {
       const r = await post('/api/cell-connect', { ws: S.ws, nb: S.nb, from, to: target });
       S.notebook = r.notebook;
@@ -2281,6 +2557,45 @@ function startFlowConnect(ev, from) {
   targetEl.addEventListener(pointer ? 'pointercancel' : 'mouseleave', cancel);
 }
 
+// is `maybeAncestor` upstream of `id` through real graph edges? (loop-back
+// candidacy check — the back-edge itself is metadata and never in deps)
+function isFlowAncestor(maybeAncestor, id) {
+  const deps = (S.notebook && S.notebook.graph && S.notebook.graph.deps) || {};
+  const seen = new Set();
+  const walk = cur => {
+    for (const d of deps[cur] || []) {
+      if (seen.has(d)) continue;
+      seen.add(d);
+      if (d === maybeAncestor) return true;
+      if (walk(d)) return true;
+    }
+    return false;
+  };
+  return walk(id);
+}
+
+async function confirmLoopBack() {
+  const p = S.flow.loopPrompt;
+  if (!p) return;
+  const input = document.getElementById('loop-max-input');
+  const max = Math.min(5, Math.max(1, parseInt(input && input.value, 10) || 3));
+  try {
+    const r = await post('/api/cell-connect', { ws: S.ws, nb: S.nb, from: p.gate, to: p.target, loop: true, max });
+    S.notebook = r.notebook;
+    S.flow.selected = p.gate;
+    toast(`loop-back: ${p.gate} ↺ ${p.target} · until pass · max ${max}`);
+  } catch (err) {
+    toast(String(err.message || err));
+  }
+  S.flow.loopPrompt = null;
+  renderFlow();
+}
+
+function cancelLoopBack() {
+  S.flow.loopPrompt = null;
+  renderFlow();
+}
+
 function flowPointerPoint(ev, plane) {
   const r = plane.getBoundingClientRect();
   return {
@@ -2298,22 +2613,70 @@ function redrawFlowEdges() {
   if (old) old.outerHTML = renderFlowEdges(pos, size);
 }
 
-function render() {
-  const nb = S.notebook;
-  if (!nb && S.view === 'notebook') return;
+// ---------------------------------------------------------------------------
+// the one-scroll page: skeleton once, then per-section updates. renderPage
+// (re)builds the masthead slot + the four chapter shells; render() refreshes
+// every section body in place, so scroll position and focus survive.
+// ---------------------------------------------------------------------------
+function renderPage() {
+  const secHead = id => {
+    const s = SECTIONS[id];
+    return `<header class="sec-head"><div class="kicker">${esc(s.kicker)}</div>
+      <h2>${esc(s.title)}</h2><div class="sub">${esc(s.sub)}</div></header>`;
+  };
+  if (S.mode === 'new') {
+    // the create/proposal flow IS section 1; the other chapters arrive with
+    // the experiment it creates
+    $('#main').innerHTML = `<div class="sec-inner" id="masthead-slot">${masthead()}</div>
+      <section class="page-sec" id="sec-details" data-section="details">
+        ${secHead('details')}<div class="sec-inner" id="details-body"></div>
+      </section>`;
+    initScrollSpy();
+    setActiveSection('details');
+    renderOnboarding();
+    syncRunButtons();
+    return;
+  }
+  $('#main').innerHTML = `<div class="sec-inner" id="masthead-slot"></div>` +
+    ['details', 'flow', 'notebook', 'results'].map(id =>
+      `<section class="page-sec" id="sec-${id}" data-section="${id}">${secHead(id)}` +
+      (id === 'flow' ? '<div id="flow-body"></div>' : `<div class="sec-inner" id="${id}-body"></div>`) +
+      `</section>`).join('');
+  initScrollSpy();
+  render();
+}
+
+function syncRunButtons() {
   const runAllBtn = $('#run-all');
   runAllBtn.innerHTML = S.running.has('__all__') ? '<span class="spin">◌</span> running' : '▶ run all';
   const stopRunBtn = $('#stop-run');
   stopRunBtn.hidden = S.running.size === 0;
+}
 
-  if (S.view === 'journal') { renderJournal(); return; }
-  if (S.view === 'results') { renderResults(); return; }
-  if (S.view === 'flow') { renderFlow(); return; }
-  if (S.view !== 'notebook') { $('#main').innerHTML = plate(S.view); return; }
-  if (!nb) return;
+function render() {
+  syncRunButtons();
+  if (S.mode === 'new') { renderOnboarding(); return; }
+  if (!document.getElementById('sec-details')) { renderPage(); return; }
+  const slot = document.getElementById('masthead-slot');
+  if (slot) slot.innerHTML = masthead();
+  renderDetails();
+  renderFlow();
+  renderNotebookSection();
+  renderResultsSection();
+}
+
+// section 3 — the field notebook: every cell with its editor and output
+function renderNotebookSection() {
+  const host = document.getElementById('notebook-body');
+  if (!host) return;
+  const nb = S.notebook;
+  if (!nb) {
+    host.innerHTML = '<div class="plate"><p>No experiment selected — the notebook arrives with one.</p></div>';
+    return;
+  }
 
   const typed = nb.cells.filter(c => c.type !== 'note');
-  let html = masthead();
+  let html = '';
 
   html += `<div class="nb-tools"><span class="kicker" style="font:600 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--text-3)">add cell</span>` +
     S.boot.cell_types.map(t => `<button class="quiet" onclick="addCell('${t}')">+ ${t}</button>`).join('') + '</div>';
@@ -2327,14 +2690,14 @@ function render() {
         const cell = typed.find(x => x.id === id);
         const c = (cell && isUnconfigured(cell)) ? '' : st.error ? 'err' : st.stale ? 'stale' : st.ran_at ? 'fresh' : '';
         return (i ? '<span class="arrow">→</span>' : '') +
-          `<span class="gcell ${c}" onclick="document.getElementById('cell-${esc(id)}').scrollIntoView({behavior:'smooth',block:'center'})">${esc(id)}</span>`;
+          `<span class="gcell ${c}" onclick="jumpToNotebookCell('${esc(id)}')">${esc(id)}</span>`;
       }).join('') + '</div>';
     if (nb.graph.cycle.length) html += `<div class="out"><span class="err">dependency cycle: ${esc(nb.graph.cycle.join(', '))}</span></div>`;
   }
 
   for (const cell of nb.cells) html += renderCell(cell);
 
-  $('#main').innerHTML = html;
+  host.innerHTML = html;
 
   // number-key shortcuts for annotation. Scoped (review finding): they fire
   // for the panel that has focus, or — the common case — when exactly one

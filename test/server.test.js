@@ -20,9 +20,10 @@ function tmpRoot() {
   return root;
 }
 
-async function startServer(root) {
+async function startServer(root, env = {}) {
   const child = spawn(process.execPath, [path.join(ROOT, 'server.js'), '--port', '0', '--root', root], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, ...env },
   });
   // `--port 0` isn't supported (parseInt gives 0 → ephemeral); read the actual
   // port from the startup line.
@@ -360,6 +361,51 @@ test('first-run onboarding: empty workspace offers the gallery; UI create matche
   }
 });
 
+test('authoring proposal endpoint falls back honestly and creation appends its correction record', async () => {
+  const root = tmpRoot();
+  const { child, base } = await startServer(root, {
+    ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', OPENAI_BASE_URL: '',
+    BEDROCK_REGION: '', AWS_REGION: '', AWS_ACCESS_KEY_ID: '',
+    AWS_SECRET_ACCESS_KEY: '', AWS_SESSION_TOKEN: '', GEMINI_API_KEY: '',
+  });
+  try {
+    const proposed = await post(base, '/api/authoring-propose', {
+      ws: 'demo', notes: 'Compare support replies from a few models.',
+    });
+    assert.equal(proposed.provider, 'offline');
+    assert.equal(proposed.label, 'offline suggestion');
+    assert.equal(proposed.proposal.goal, 'compare');
+    assert.match(proposed.note, /no live provider/);
+
+    const created = await post(base, '/api/notebook-create', {
+      ws: 'demo', template: proposed.proposal.template, name: 'support-replies',
+      notes: 'Compare support replies from a few models.',
+      authoring: {
+        notes: 'Compare support replies from a few models.',
+        proposed: proposed.proposal,
+        kept: { ...proposed.proposal, name: 'support-replies' },
+        provider: proposed.provider,
+      },
+    });
+    assert.equal(created.name, 'support-replies');
+
+    const logFile = path.join(root, 'projects', 'demo', '_bench', 'authoring-log.jsonl');
+    const rows = fs.readFileSync(logFile, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(rows.length, 1, 'proposal-backed creation appends exactly one record');
+    assert.equal(rows[0].notes, 'Compare support replies from a few models.');
+    assert.deepEqual(rows[0].proposed, {
+      goal: 'compare', posture: 'fixture', template: 'model-compare', name: proposed.proposal.name,
+    });
+    assert.deepEqual(rows[0].kept, {
+      goal: 'compare', posture: 'fixture', template: 'model-compare', name: 'support-replies',
+    });
+    assert.equal(rows[0].provider, 'offline');
+    assert.ok(rows[0].at, 'record is timestamped');
+  } finally {
+    child.kill();
+  }
+});
+
 test('notebook creation persists notes and duplicates without changing the source', async () => {
   const root = tmpRoot();
   const { child, base } = await startServer(root);
@@ -455,6 +501,37 @@ test('notebook-meta: a quoted goal survives repeated saves without backslash gro
   }
 });
 
+test('new control cells carry starters and standalone titles keep quotes', async () => {
+  const root = tmpRoot();
+  const { child, base } = await startServer(root);
+  try {
+    await post(base, '/api/notebook-create', { ws: 'demo', demo: true });
+    const starters = {
+      switch: '# input: my-data-cell',
+      map: '# input: my-data-cell',
+      retry: '# target: my-agent-cell',
+      catch: '# try: my-agent-cell',
+      tool: 'kind: expr',
+    };
+    for (const [type, marker] of Object.entries(starters)) {
+      const added = await post(base, '/api/cell-add', { ws: 'demo', nb: 'model-compare', type, id: `new-${type}` });
+      const cell = added.notebook.cells.find(c => c.id === `new-${type}`);
+      assert.ok(cell, `${type} cell was added`);
+      assert.match(cell.raw, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      if (type === 'tool') assert.equal(cell.config.expr, 'String(args.input || "")');
+      else assert.deepEqual(cell.config, {}, `${type} stays placeholder-only until wired`);
+    }
+
+    const title = 'He said "hello"';
+    const created = await post(base, '/api/notebook-create', { ws: 'demo', name: 'quoted-title', title });
+    assert.equal(created.name, 'quoted-title');
+    const quoted = await get(base, '/api/notebook?ws=demo&nb=quoted-title');
+    assert.equal(quoted.meta.title, title);
+  } finally {
+    child.kill();
+  }
+});
+
 test('server-side rewrites keep every interleaved prose note intact on disk', async () => {
   // Regression guard for bug-note-prose-roundtrip: the report said the demo's
   // six prose notes vanished from the .bench.md after any server rewrite
@@ -534,6 +611,121 @@ test('layout endpoint round-trips notebook positions and refuses traversal-shape
     });
     assert.match(badPost.error, /notebook name/);
     assert.equal(fs.existsSync(path.join(root, 'projects', 'demo', '_bench', 'escape.json')), false);
+  } finally {
+    child.kill();
+  }
+});
+
+// The learning criterion end to end through the server, keyless by
+// construction: provider keys are scrubbed from the child env so the offline
+// path answers on any machine — including one with a populated .env. A create
+// where the human diverged (posture fixture→live) lands its proposed-vs-kept
+// row on disk; hand-built creates don't log; and once the correction repeats,
+// the next /api/authoring-propose for similar notes prefers what the human
+// kept. (Basic propose/label/log-row shape is covered by the test above.)
+test('authoring learning over HTTP: logged divergences shape the next proposal', async () => {
+  const root = tmpRoot();
+  const scrub = {
+    ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', BENCH_OPENAI_BASE_URL: '',
+    GEMINI_API_KEY: '', AWS_ACCESS_KEY_ID: '', AWS_SECRET_ACCESS_KEY: '',
+    AWS_SESSION_TOKEN: '', BEDROCK_REGION: '', AWS_REGION: '', AWS_DEFAULT_REGION: '',
+  };
+  const { child, base } = await startServer(root, scrub);
+  try {
+    const first = await post(base, '/api/authoring-propose', {
+      ws: 'demo', notes: 'compare models on customer support replies',
+    });
+    assert.equal(first.provider, 'offline');
+    assert.equal(first.proposal.posture, 'fixture');
+    assert.equal(first.digest_rows, 0, 'empty log → nothing to learn from yet');
+
+    // create from the proposal, but the human corrected posture fixture → live
+    const created = await post(base, '/api/notebook-create', {
+      ws: 'demo', template: 'model-compare', name: 'support-replies',
+      notes: 'compare models on customer support replies',
+      authoring: {
+        notes: 'compare models on customer support replies',
+        proposed: first.proposal,
+        kept: { goal: first.proposal.goal, posture: 'live' },
+        provider: first.provider,
+      },
+    });
+    assert.equal(created.name, 'support-replies');
+
+    const logFile = path.join(root, 'projects', 'demo', '_bench', 'authoring-log.jsonl');
+    const rows = fs.readFileSync(logFile, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].proposed.posture, 'fixture');
+    assert.equal(rows[0].kept.posture, 'live', 'the divergence is the training signal');
+    assert.equal(rows[0].kept.template, 'model-compare', 'server stamps what was actually scaffolded');
+    assert.equal(rows[0].kept.name, 'support-replies');
+
+    // a hand-built create (no proposal) must NOT log — nothing to learn from
+    await post(base, '/api/notebook-create', { ws: 'demo', name: 'hand-built' });
+    assert.equal(fs.readFileSync(logFile, 'utf8').trim().split('\n').length, 1);
+
+    // seed a second identical correction (repetition = signal, one-off = noise),
+    // then the next proposal for similar notes prefers what the human kept
+    fs.appendFileSync(logFile, JSON.stringify({
+      at: new Date().toISOString(),
+      notes: 'compare models on support reply quality',
+      proposed: { goal: 'compare', posture: 'fixture', template: 'model-compare', name: 'x' },
+      kept: { goal: 'compare', posture: 'live', template: 'live-compare', name: 'x' },
+      provider: 'offline',
+    }) + '\n');
+    const learned = await post(base, '/api/authoring-propose', {
+      ws: 'demo', notes: 'compare models on support replies',
+    });
+    assert.equal(learned.provider, 'offline');
+    assert.equal(learned.digest_rows, 2);
+    assert.equal(learned.proposal.posture, 'live', 'repeated fixture→live correction is learned over HTTP');
+    assert.equal(learned.proposal.template, 'live-compare', 'template follows the learned posture');
+    assert.match(learned.proposal.rationale, /corrections/);
+  } finally {
+    child.kill();
+  }
+});
+
+test('cell-connect loop variant: the gesture writes loop config on the gate', async () => {
+  const root = tmpRoot();
+  const { child, base } = await startServer(root);
+  try {
+    const nbText = [
+      '---\nnotebook: loopy\ntitle: "loop gesture"\n---',
+      '',
+      '```tl-cell\nid: rows\ntype: data\nrows:\n  - input: "hi"\n```',
+      '',
+      '```tl-cell\nid: draft\ntype: agent\nprovider: fixture\ndata: rows\ntemplate: |\n  {{input}} // {{feedback.rationale}}\n```',
+      '',
+      '```tl-cell\nid: check\ntype: gate\ninput: draft\nexpr: feedback != null\n```',
+      '',
+    ].join('\n');
+    fs.mkdirSync(path.join(root, 'projects', 'demo', '_bench'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'projects', 'demo', '_bench', 'loopy.bench.md'), nbText);
+
+    // the loop-back variant writes loop: {back_to, max} on the FROM gate
+    const r = await post(base, '/api/cell-connect', { ws: 'demo', nb: 'loopy', from: 'check', to: 'draft', loop: true, max: 3 });
+    const gate = r.notebook.cells.find(c => c.id === 'check');
+    assert.deepEqual(gate.config.loop, { back_to: 'draft', max: 3 });
+    // the back-edge is metadata: no graph edge, no cycle
+    assert.deepEqual(r.notebook.graph.deps.check, ['draft']);
+    assert.deepEqual(r.notebook.graph.cycle, []);
+    // and the notebook FILE carries the loop config (markdown is the database)
+    const onDisk = fs.readFileSync(path.join(root, 'projects', 'demo', '_bench', 'loopy.bench.md'), 'utf8');
+    assert.match(onDisk, /loop:\n {2}back_to: draft\n {2}max: 3/);
+
+    // the loop actually runs over HTTP: two passes, downstream green
+    const run = await post(base, '/api/run', { ws: 'demo', nb: 'loopy' });
+    assert.equal(run.status, 'passed');
+    const lp = run.notebook.state.check.output.loop;
+    assert.equal(lp.passes.length, 2);
+    assert.equal(run.notebook.state.check.output.pass, true);
+
+    // refusals stay readable at the endpoint: non-gate source, bad max
+    const notGate = await post(base, '/api/cell-connect', { ws: 'demo', nb: 'loopy', from: 'draft', to: 'rows', loop: true, max: 2 });
+    assert.match(notGate.error, /only a gate cell can carry a loop-back \(got agent "draft"\)/);
+    const badMax = await post(base, '/api/cell-connect', { ws: 'demo', nb: 'loopy', from: 'check', to: 'draft', loop: true, max: 7 });
+    assert.match(badMax.error, /loop max must be an integer between 1 and 5/);
   } finally {
     child.kill();
   }
